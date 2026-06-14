@@ -6,7 +6,8 @@ import { ChevronLeft, Send, Activity, DollarSign, Zap, Key, Image, BookOpen, Cpu
 import { useAppStore } from '@/lib/store'
 
 const NVIDIA_STORY_MODELS = [
-  { value: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', description: 'Best for creative writing' },
+  { value: 'nvidia/nemotron-3-ultra-550b-a55b', label: 'Nemotron Ultra', description: 'Best - reasoning model for stories' },
+  { value: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', description: 'Fast creative writing' },
   { value: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6', description: 'Alternative creative model' },
   { value: 'glm-4', label: 'GLM-4', description: 'General purpose model' },
 ]

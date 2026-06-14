@@ -91,3 +91,30 @@ Stage Summary:
 - Separate page/image count sliders with default reset
 - All API routes updated consistently
 - Build passes with 0 errors
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Configure NVIDIA API key and Nemotron model for story + image generation
+
+Work Log:
+- Set NVIDIA API key as default in store: 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
+- Set default story model to nvidia/nemotron-3-ultra-550b-a55b (Nemotron Ultra)
+- Updated nvidia-story API route with Nemotron-specific parameters:
+  - reasoning_effort: "high"
+  - reasoning_budget: 16384
+  - temperature: 1
+  - top_p: 0.95
+  - max_tokens: 16384
+  - stream: false (needed for full JSON response parsing)
+  - Strips <think> tags from Nemotron reasoning output
+- Added Nemotron Ultra as primary model option in AdminPanel
+- Same API key used for both story generation AND image generation
+- Build verified: no errors
+
+Stage Summary:
+- NVIDIA API key configured as default
+- Nemotron Ultra set as default story model
+- Story API route supports Nemotron reasoning parameters
+- Image generation uses same API key for SDXL / image-to-image
+- All changes compile and build successfully

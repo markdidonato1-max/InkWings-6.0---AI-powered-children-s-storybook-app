@@ -195,8 +195,8 @@ export const useAppStore = create<AppState>()(
       adminApiKey: '',
       adminCallLogs: [],
 
-      nvidiaApiKey: '',
-      nvidiaStoryModel: 'meta/llama-3.3-70b-instruct',
+      nvidiaApiKey: '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',
+      nvidiaStoryModel: 'nvidia/nemotron-3-ultra-550b-a55b',
       nvidiaImageStyle: 'watercolor',
       nvidiaImageModel: 'stabilityai/stable-diffusion-xl',
 

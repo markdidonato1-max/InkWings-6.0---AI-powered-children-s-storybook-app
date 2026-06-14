@@ -1,5 +1,6 @@
 // NVIDIA API Story Generation Route
-// Uses NVIDIA's LLM API for creative story generation
+// Uses NVIDIA's LLM API (Nemotron) for creative story generation
+// Supports Nemotron-specific parameters like reasoning_effort and reasoning_budget
 
 // Images are placed every 2 pages: image i goes on page (i*2) (0-indexed)
 // If odd pages, the last image covers just 1 page
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'NVIDIA API key is required' }, { status: 400 })
     }
 
-    const selectedModel = model || 'meta/llama-3.3-70b-instruct'
+    const selectedModel = model || 'nvidia/nemotron-3-ultra-550b-a55b'
 
     const vocabularyLevel =
       ageRange === '3-5'
@@ -75,24 +76,36 @@ RULES:
 - Provide an imageDescription for EVERY page, even though only ${imageCount} images will be generated
 - NEVER wrap the JSON in markdown code blocks - return ONLY raw JSON`
 
+    // Build request body - Nemotron supports reasoning_effort and reasoning_budget
+    const requestBody: Record<string, unknown> = {
+      model: selectedModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Create a ${storyStyle.toLowerCase()} ${genre} story about: ${prompt}. The main character's name is ${childName}.`,
+        },
+      ],
+      temperature: 1,
+      top_p: 0.95,
+      max_tokens: 16384,
+      stream: false, // We need the full response at once for JSON parsing
+    }
+
+    // Add Nemotron-specific reasoning parameters if using a Nemotron model
+    if (selectedModel.includes('nemotron')) {
+      requestBody.reasoning_effort = 'high'
+      requestBody.reasoning_budget = 16384
+    }
+
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        model: selectedModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: `Create a ${storyStyle.toLowerCase()} ${genre} story about: ${prompt}. The main character's name is ${childName}.`,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 4096,
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
@@ -105,7 +118,16 @@ RULES:
     }
 
     const data = await response.json()
-    const content = data.choices?.[0]?.message?.content || ''
+
+    // For Nemotron, the content might be in the reasoning_content or message.content
+    let content = data.choices?.[0]?.message?.content || ''
+
+    // If using Nemotron with reasoning, the actual response might include reasoning tokens
+    // The main content is still in message.content, but we may need to strip any <think> tags
+    const thinkMatch = content.match(/<\/think>\s*([\s\S]*)/)
+    if (thinkMatch) {
+      content = thinkMatch[1].trim()
+    }
 
     // Parse JSON from response
     try {
