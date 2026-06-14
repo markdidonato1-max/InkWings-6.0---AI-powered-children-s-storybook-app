@@ -252,15 +252,14 @@ export default function CreateBookPage() {
             style: nvidiaImageStyle,
           }
 
-          // Always use nvidia-image route which has ZAI SDK fallback
+          // Always use nvidia-image route which has ZAI SDK as primary
           const imgEndpoint = '/api/nvidia-image'
 
-          if (nvidiaApiKey) {
+          // Only send NVIDIA credentials if both API key AND a valid image model are provided
+          // Most NVIDIA API keys only have text/chat models — image models require separate subscription
+          if (nvidiaApiKey && nvidiaImageModel) {
             imgRequestBody.apiKey = nvidiaApiKey
-            // Only send model if it's an image model (not a text model)
-            if (nvidiaImageModel && nvidiaImageModel !== 'nvidia/nemotron-3-ultra-550b-a55b') {
-              imgRequestBody.model = nvidiaImageModel
-            }
+            imgRequestBody.model = nvidiaImageModel
           }
 
           // Pass the drawing photo as reference for image-to-image generation

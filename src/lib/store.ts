@@ -198,7 +198,7 @@ export const useAppStore = create<AppState>()(
       nvidiaApiKey: '',
       nvidiaStoryModel: 'nvidia/nemotron-3-ultra-550b-a55b',
       nvidiaImageStyle: 'watercolor',
-      nvidiaImageModel: 'stabilityai/stable-diffusion-xl',
+      nvidiaImageModel: '', // No default — NVIDIA image models require separate subscription
 
       // Navigation
       setPage: (page) =>
@@ -344,6 +344,31 @@ export const useAppStore = create<AppState>()(
         nvidiaImageStyle: state.nvidiaImageStyle,
         nvidiaImageModel: state.nvidiaImageModel,
       }),
+      // Migration: clear stale/invalid config values when loading from localStorage
+      merge: (persistedState: unknown, currentState: unknown) => {
+        const p = persistedState as Record<string, unknown>
+        const c = currentState as Record<string, unknown>
+        const merged = { ...c, ...p }
+        // Clear invalid NVIDIA image model — these models require separate subscription
+        // and returning 404 wastes 5-10 seconds on every image generation attempt
+        if (merged.nvidiaImageModel === 'stabilityai/stable-diffusion-xl') {
+          merged.nvidiaImageModel = ''
+        }
+        // Fix any existing book images with wrong MIME type (JPEG data labeled as PNG)
+        if (Array.isArray(merged.books)) {
+          merged.books = (merged.books as Book[]).map((book: Book) => ({
+            ...book,
+            pages: book.pages?.map((page: BookPage) => ({
+              ...page,
+              imageUrl: page.imageUrl?.replace(
+                'data:image/png;base64,/9j/',
+                'data:image/jpeg;base64,/9j/'
+              ),
+            })),
+          }))
+        }
+        return merged
+      },
     }
   )
 )

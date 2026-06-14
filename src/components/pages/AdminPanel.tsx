@@ -13,9 +13,10 @@ const NVIDIA_STORY_MODELS = [
 ]
 
 const NVIDIA_IMAGE_MODELS = [
-  { value: 'stabilityai/stable-diffusion-xl', label: 'SDXL', description: 'Stable Diffusion XL - versatile' },
-  { value: 'stabilityai/stable-diffusion-3-medium', label: 'SD3 Medium', description: 'SD3 - improved quality' },
-  { value: 'black-forest-labs/flux-1-schnell', label: 'Flux Schnell', description: 'Fast generation' },
+  { value: '', label: 'None (use built-in)', description: 'Use ZAI SDK image generation (recommended)' },
+  { value: 'stabilityai/stable-diffusion-xl', label: 'SDXL', description: 'Stable Diffusion XL (requires NVIDIA image access)' },
+  { value: 'stabilityai/stable-diffusion-3-medium', label: 'SD3 Medium', description: 'SD3 improved quality (requires NVIDIA image access)' },
+  { value: 'black-forest-labs/flux-1-schnell', label: 'Flux Schnell', description: 'Fast generation (requires NVIDIA image access)' },
 ]
 
 const IMAGE_STYLES = [

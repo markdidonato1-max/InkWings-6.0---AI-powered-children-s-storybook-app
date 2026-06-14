@@ -194,3 +194,28 @@ Stage Summary:
 - Fixed in: CreateBookPage.tsx, BookReaderPage.tsx
 - Added backward compatibility via fixImageUrl() for any existing books in localStorage
 - Server running on port 3000
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Diagnose and fix why NVIDIA API keys are not working
+
+Work Log:
+- Tested NVIDIA API key directly — it WORKS for chat/story generation (200 OK)
+- Tested NVIDIA image models — they ALL return 404 (not available on this API key)
+- Listed all 121 available models on this key — zero image generation models
+- Root cause: NVIDIA image models (SDXL, SD3, Flux) require a separate subscription
+- The app was wasting 5-10 seconds on each image trying the NVIDIA image API before falling back
+- Fixed: Only send NVIDIA credentials for image generation when BOTH API key AND image model are provided
+- Cleared stale default image model from store (was 'stabilityai/stable-diffusion-xl')
+- Added migration logic in store's merge function to auto-fix:
+  1. Clear invalid NVIDIA image model from localStorage
+  2. Fix JPEG images with wrong PNG MIME type in existing saved books
+- Updated Admin Panel to show "None (use built-in)" as recommended image model option
+- Simplified client-side logic: only send NVIDIA API key for images if both key+model present
+
+Stage Summary:
+- NVIDIA chat API works fine — story generation can still use it when key is provided
+- NVIDIA image API is NOT available on this key — requires separate subscription
+- All image generation now goes directly through ZAI SDK (no wasted time on failed NVIDIA calls)
+- Migration logic auto-fixes existing localStorage data on next app load
