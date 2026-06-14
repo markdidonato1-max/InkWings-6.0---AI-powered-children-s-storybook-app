@@ -117,6 +117,7 @@ interface AppState {
     moral: string
     pageCount: number
     imageCount: number
+    drawingPhoto: string | null
   } | null
 
   // Admin
@@ -127,6 +128,7 @@ interface AppState {
   nvidiaApiKey: string
   nvidiaStoryModel: string
   nvidiaImageStyle: string
+  nvidiaImageModel: string
 
   // Actions
   setPage: (page: PageName) => void
@@ -162,6 +164,7 @@ interface AppState {
   setNvidiaApiKey: (key: string) => void
   setNvidiaStoryModel: (model: string) => void
   setNvidiaImageStyle: (style: string) => void
+  setNvidiaImageModel: (model: string) => void
 
   // Helpers
   getCurrentChild: () => ChildProfile | null
@@ -195,6 +198,7 @@ export const useAppStore = create<AppState>()(
       nvidiaApiKey: '',
       nvidiaStoryModel: 'meta/llama-3.3-70b-instruct',
       nvidiaImageStyle: 'watercolor',
+      nvidiaImageModel: 'stabilityai/stable-diffusion-xl',
 
       // Navigation
       setPage: (page) =>
@@ -304,6 +308,7 @@ export const useAppStore = create<AppState>()(
       setNvidiaApiKey: (key) => set({ nvidiaApiKey: key }),
       setNvidiaStoryModel: (model) => set({ nvidiaStoryModel: model }),
       setNvidiaImageStyle: (style) => set({ nvidiaImageStyle: style }),
+      setNvidiaImageModel: (model) => set({ nvidiaImageModel: model }),
 
       // Helpers
       getCurrentChild: () => {
@@ -337,6 +342,7 @@ export const useAppStore = create<AppState>()(
         nvidiaApiKey: state.nvidiaApiKey,
         nvidiaStoryModel: state.nvidiaStoryModel,
         nvidiaImageStyle: state.nvidiaImageStyle,
+        nvidiaImageModel: state.nvidiaImageModel,
       }),
     }
   )

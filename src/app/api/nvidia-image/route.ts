@@ -1,5 +1,7 @@
 // NVIDIA API Image Generation Route
-// Uses NVIDIA's Stable Diffusion XL endpoint for image generation
+// Supports both text-to-image and image-to-image generation
+// When a referenceImage (child's drawing) is provided, it uses it as input
+// for style transfer / image-to-image generation
 
 import ZAI from 'z-ai-web-dev-sdk'
 
@@ -13,15 +15,65 @@ const STYLE_PROMPTS: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    const { prompt, style, apiKey } = await request.json()
+    const { prompt, style, apiKey, referenceImage, model } = await request.json()
 
     const selectedStyle = style || 'watercolor'
     const stylePrompt = STYLE_PROMPTS[selectedStyle] || STYLE_PROMPTS.watercolor
-    const fullPrompt = `${stylePrompt}: ${prompt}`
+
+    // If a reference image (child's drawing) is provided, enhance the prompt
+    // to incorporate the drawing's content into the generated illustration
+    let fullPrompt: string
+    if (referenceImage) {
+      fullPrompt = `Transform this child's drawing into a professional ${stylePrompt}: ${prompt}. Maintain the core composition and subject matter from the original drawing while applying the ${selectedStyle} artistic style. Keep it whimsical and child-friendly.`
+    } else {
+      fullPrompt = `${stylePrompt}: ${prompt}`
+    }
 
     // If NVIDIA API key is provided, try NVIDIA's image generation
     if (apiKey) {
       try {
+        const selectedModel = model || 'stabilityai/stable-diffusion-xl'
+
+        // If we have a reference image, use image-to-image endpoint
+        if (referenceImage) {
+          // NVIDIA's img2img endpoint - send reference image as init image
+          const response = await fetch('https://integrate.api.nvidia.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: selectedModel,
+              prompt: fullPrompt,
+              image: referenceImage,
+              strength: 0.7, // How much to transform from the original (0.7 = significant but preserves composition)
+              size: '1024x1024',
+              n: 1,
+            }),
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            // NVIDIA returns base64 or URL
+            if (data.data?.[0]?.b64_json) {
+              return Response.json({ base64: data.data[0].b64_json })
+            }
+            if (data.data?.[0]?.url) {
+              // If it returns a URL, fetch and convert to base64
+              const imgResponse = await fetch(data.data[0].url)
+              if (imgResponse.ok) {
+                const arrayBuffer = await imgResponse.arrayBuffer()
+                const base64 = Buffer.from(arrayBuffer).toString('base64')
+                return Response.json({ base64 })
+              }
+            }
+          }
+          // If image-to-image fails, try text-to-image with enhanced prompt
+          console.log('NVIDIA image-to-image failed, trying text-to-image with enhanced prompt')
+        }
+
+        // Standard text-to-image generation
         const response = await fetch('https://integrate.api.nvidia.com/v1/images/generations', {
           method: 'POST',
           headers: {
@@ -29,7 +81,7 @@ export async function POST(request: Request) {
             'Authorization': `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: 'stabilityai/stable-diffusion-xl',
+            model: selectedModel,
             prompt: fullPrompt,
             size: '1024x1024',
             n: 1,

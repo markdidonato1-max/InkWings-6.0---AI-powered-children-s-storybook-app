@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Sparkles, BookOpen, Image, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Sparkles, BookOpen, Image, Loader2, Camera, Upload, X } from 'lucide-react'
 import { useAppStore, STORY_STYLES, GENRES, MORALS, AGE_RANGES, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS, type Book, type BookPage } from '@/lib/store'
 
 const STEPS = [
-  'Story Idea',
+  'Story Idea & Drawing',
   'Story Style',
   'Genre',
   'Reading Level',
@@ -23,24 +23,35 @@ const PAGE_PRESETS = [
 ]
 
 // Calculate which pages get images based on imageCount and pageCount
-// Images are placed at the start of each section (1 image per ~2 pages)
+// Images are placed every 2 pages: image i goes on page (i*2) (0-indexed)
+// If odd pages, the last image covers just 1 page
 function getImagePositions(pageCount: number, imageCount: number): Set<number> {
   const positions = new Set<number>()
   if (imageCount <= 0 || pageCount <= 0) return positions
 
+  // Place images every 2 pages from the start
   for (let i = 0; i < imageCount; i++) {
-    const pos = Math.floor(i * pageCount / imageCount)
-    positions.add(Math.min(pos, pageCount - 1))
+    const pos = i * 2
+    if (pos < pageCount) {
+      positions.add(pos)
+    } else {
+      // If more images than pairs, distribute remaining at the end
+      const remaining = imageCount - i
+      const startPos = pageCount - remaining
+      for (let j = i; j < imageCount; j++) {
+        positions.add(Math.max(startPos + (j - i), 0))
+      }
+      break
+    }
   }
   return positions
 }
 
-// Get the paired page text for an image at a given position
-// Each image covers the pages from its position to the next image position
-function getPairedPageText(pages: { text: string }[], imagePageIndex: number, pageCount: number, imageCount: number): string {
-  const pagesPerImage = pageCount / imageCount
-  const startPage = Math.floor(imagePageIndex * pagesPerImage)
-  const endPage = Math.min(Math.floor((imagePageIndex + 1) * pagesPerImage) - 1, pages.length - 1)
+// Get the text of the pages that an image covers for the prompt
+// Image i covers pages (2i) and (2i+1). If odd pages and last image, covers just 1 page.
+function getImagePromptText(pages: { text: string }[], imageIndex: number): string {
+  const startPage = imageIndex * 2
+  const endPage = Math.min(startPage + 1, pages.length - 1)
 
   let combinedText = ''
   for (let i = startPage; i <= endPage; i++) {
@@ -55,10 +66,12 @@ export default function CreateBookPage() {
   const {
     setPage, currentChildId, parentAccount, addBook, setCurrentBookId,
     createBookStep, setCreateBookStep, createBookData, setCreateBookData,
-    nvidiaApiKey, nvidiaStoryModel, nvidiaImageStyle,
+    nvidiaApiKey, nvidiaStoryModel, nvidiaImageStyle, nvidiaImageModel,
   } = useAppStore()
 
   const currentChild = parentAccount?.children.find((c) => c.id === currentChildId)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const [prompt, setPrompt] = useState(createBookData?.prompt || '')
   const [storyStyle, setStoryStyle] = useState(createBookData?.storyStyle || '')
@@ -67,11 +80,15 @@ export default function CreateBookPage() {
   const [moral, setMoral] = useState(createBookData?.moral || 'none')
   const [pageCount, setPageCount] = useState(createBookData?.pageCount || 6)
   const [imageCount, setImageCount] = useState(createBookData?.imageCount || 3)
+  const [drawingPhoto, setDrawingPhoto] = useState<string | null>(createBookData?.drawingPhoto || null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStep, setGenerationStep] = useState('')
   const [generationProgress, setGenerationProgress] = useState(0)
 
   const step = createBookStep
+
+  // Default image count = ceil(pageCount / 2), capped at 10
+  const defaultImageCount = Math.min(10, Math.ceil(pageCount / 2))
 
   // Auto-adjust imageCount when pageCount changes
   useEffect(() => {
@@ -79,17 +96,12 @@ export default function CreateBookPage() {
     if (imageCount > maxImages) {
       setImageCount(maxImages)
     }
-    // Default image count follows half the pages
-    const defaultImageCount = Math.ceil(pageCount / 2)
-    if (!createBookData?.imageCount && imageCount !== defaultImageCount) {
-      setImageCount(defaultImageCount)
-    }
   }, [pageCount])
 
-  // Save data whenever step changes
+  // Save data whenever values change
   useEffect(() => {
-    setCreateBookData({ prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount })
-  }, [prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, setCreateBookData])
+    setCreateBookData({ prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, drawingPhoto })
+  }, [prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, drawingPhoto, setCreateBookData])
 
   const canProceed = () => {
     if (step === 0) return prompt.trim() !== ''
@@ -112,6 +124,53 @@ export default function CreateBookPage() {
   const handleBack = () => {
     if (step > 0) setCreateBookStep(step - 1)
     else setPage('child-home')
+  }
+
+  // Handle photo upload
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) return
+
+    // Resize and convert to base64
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = document.createElement('img')
+      img.onload = () => {
+        // Resize to max 1024x1024 for API calls
+        const canvas = document.createElement('canvas')
+        const maxSize = 1024
+        let width = img.width
+        let height = img.height
+
+        if (width > maxSize || height > maxSize) {
+          if (width > height) {
+            height = (height / width) * maxSize
+            width = maxSize
+          } else {
+            width = (width / height) * maxSize
+            height = maxSize
+          }
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, width, height)
+        const base64 = canvas.toDataURL('image/png').split(',')[1]
+        setDrawingPhoto(base64)
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+    // Reset input so same file can be re-selected
+    e.target.value = ''
+  }
+
+  const removePhoto = () => {
+    setDrawingPhoto(null)
   }
 
   const handleGenerate = async () => {
@@ -181,8 +240,10 @@ export default function CreateBookPage() {
         setGenerationStep(`Painting image ${imagesGenerated} of ${totalImages}...`)
         setGenerationProgress(40 + Math.round((imagesGenerated / totalImages) * 50))
 
-        // Combine text of paired pages for image prompt
-        const combinedText = getPairedPageText(pagesData, imagesGenerated - 1, pageCount, imageCount)
+        // Use the text of the 2 pages this image covers as the prompt
+        // Image i covers pages (2i) and (2i+1); if odd pages, last image covers 1 page
+        const imageIndex = imagesGenerated - 1
+        const combinedText = getImagePromptText(pagesData, imageIndex)
         const imagePrompt = combinedText || data.pages[pageIdx]?.imageDescription || `A colorful watercolor illustration for page ${pageIdx + 1}`
 
         try {
@@ -195,6 +256,12 @@ export default function CreateBookPage() {
 
           if (nvidiaApiKey) {
             imgRequestBody.apiKey = nvidiaApiKey
+            imgRequestBody.model = nvidiaImageModel
+          }
+
+          // Pass the drawing photo as reference for image-to-image generation
+          if (drawingPhoto) {
+            imgRequestBody.referenceImage = drawingPhoto
           }
 
           const imgResponse = await fetch(imgEndpoint, {
@@ -330,7 +397,6 @@ export default function CreateBookPage() {
   }
 
   const maxImageCount = Math.min(10, pageCount)
-  const imageRatio = pageCount > 0 ? (imageCount / pageCount).toFixed(1) : '0'
   const pagesPerImage = imageCount > 0 ? Math.round(pageCount / imageCount) : 0
 
   return (
@@ -373,9 +439,9 @@ export default function CreateBookPage() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              {/* Step 0: Story prompt */}
+              {/* Step 0: Story prompt + Drawing photo upload */}
               {step === 0 && (
-                <div className="space-y-4">
+                <div className="space-y-5">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-800 mb-1">What should the story be about?</h2>
                     <p className="text-gray-500 text-sm">Describe the story you want to create</p>
@@ -388,6 +454,76 @@ export default function CreateBookPage() {
                     maxLength={500}
                   />
                   <p className="text-xs text-gray-400 text-right">{prompt.length}/500</p>
+
+                  {/* Drawing Photo Upload Section */}
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Camera className="w-5 h-5 text-purple-500" />
+                      <h3 className="font-semibold text-gray-800">Add a Drawing</h3>
+                      <span className="text-xs text-gray-400">(optional)</span>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Upload a photo of your child&apos;s drawing and we&apos;ll use it as inspiration for all the illustrations in the story! The images will be generated in the style your child chooses.
+                    </p>
+
+                    {drawingPhoto ? (
+                      <div className="relative">
+                        <img
+                          src={`data:image/png;base64,${drawingPhoto}`}
+                          alt="Child's drawing"
+                          className="w-full max-h-48 object-contain rounded-xl bg-gray-50 border border-purple-100"
+                        />
+                        <button
+                          onClick={removePhoto}
+                          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-green-50 text-green-700 text-xs font-medium">
+                            ✓ Drawing uploaded
+                          </span>
+                          <span className="text-xs text-purple-500">
+                            Illustrations will be based on this drawing
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="flex-1 py-4 rounded-xl bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-dashed border-purple-200 text-purple-600 hover:border-purple-400 hover:bg-purple-100/50 transition-all flex flex-col items-center gap-2"
+                        >
+                          <Camera className="w-6 h-6" />
+                          <span className="text-sm font-medium">Take Photo</span>
+                        </button>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex-1 py-4 rounded-xl bg-gradient-to-br from-pink-50 to-purple-50 border-2 border-dashed border-pink-200 text-pink-600 hover:border-pink-400 hover:bg-pink-100/50 transition-all flex flex-col items-center gap-2"
+                        >
+                          <Upload className="w-6 h-6" />
+                          <span className="text-sm font-medium">Upload</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Hidden file inputs */}
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                  </div>
 
                   {/* Quick suggestions */}
                   <div>
@@ -619,16 +755,34 @@ export default function CreateBookPage() {
                       <span>1</span>
                       <span>{maxImageCount}</span>
                     </div>
-                    <div className="mt-3 flex items-center justify-center gap-2">
+                    <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
                       <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-medium">
-                        1 image every ~{pagesPerImage} pages
+                        1 image every ~2 pages
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-pink-50 text-pink-700 text-xs font-medium">
+                        Default: {defaultImageCount} images
                       </span>
                     </div>
+                    <button
+                      onClick={() => setImageCount(defaultImageCount)}
+                      className="mt-2 w-full text-xs text-indigo-500 hover:text-indigo-600 transition-colors py-1"
+                    >
+                      Reset to default ({defaultImageCount} images)
+                    </button>
                   </div>
+
+                  {/* Drawing reminder */}
+                  {drawingPhoto && (
+                    <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
+                      <p className="text-sm text-green-700">
+                        🎨 Your child&apos;s drawing will be used as the reference for all {imageCount} illustrations. Each image will be generated in the <strong>{nvidiaImageStyle}</strong> style.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Visual Summary */}
                   <div className="bg-white rounded-2xl p-4 shadow-sm border border-purple-100">
-                    <p className="text-xs font-medium text-gray-500 mb-2">Preview layout:</p>
+                    <p className="text-xs font-medium text-gray-500 mb-2">Preview layout (images every 2 pages):</p>
                     <div className="flex flex-wrap gap-1.5">
                       {Array.from({ length: pageCount }, (_, i) => {
                         const imagePositions = getImagePositions(pageCount, imageCount)
@@ -648,7 +802,12 @@ export default function CreateBookPage() {
                       })}
                     </div>
                     <p className="text-[10px] text-gray-400 mt-2">
-                      🖼️ = page with illustration &nbsp;|&nbsp; Number = text-only page
+                      🖼️ = page with illustration (covers this page + next) &nbsp;|&nbsp; Number = text-only page
+                      {pageCount % 2 !== 0 && (
+                        <span className="block mt-1 text-purple-500">
+                          Last image covers only 1 page (odd page count)
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -666,6 +825,16 @@ export default function CreateBookPage() {
                       <p className="text-xs font-medium text-gray-400 uppercase">Story Idea</p>
                       <p className="text-gray-800 mt-1">{prompt}</p>
                     </div>
+                    {drawingPhoto && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-400 uppercase">Reference Drawing</p>
+                        <img
+                          src={`data:image/png;base64,${drawingPhoto}`}
+                          alt="Child's drawing"
+                          className="mt-1 w-24 h-24 object-contain rounded-lg bg-gray-50 border border-purple-100"
+                        />
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs font-medium text-gray-400 uppercase">Style</p>
@@ -700,6 +869,11 @@ export default function CreateBookPage() {
                     <p className="text-sm text-purple-700">
                       ✨ Your story will be personalized for <strong>{currentChild?.name || 'your child'}</strong> with age-appropriate
                       content and {imageCount} beautiful {nvidiaImageStyle} illustrations across {pageCount} pages.
+                      {drawingPhoto && (
+                        <span className="block mt-1">
+                          🎨 All illustrations will be inspired by the uploaded drawing!
+                        </span>
+                      )}
                     </p>
                   </div>
 

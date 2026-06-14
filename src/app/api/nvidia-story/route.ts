@@ -1,14 +1,25 @@
 // NVIDIA API Story Generation Route
 // Uses NVIDIA's LLM API for creative story generation
 
-// Images are placed at the start of each section (1 image per ~2 pages)
+// Images are placed every 2 pages: image i goes on page (i*2) (0-indexed)
+// If odd pages, the last image covers just 1 page
 function getImagePositions(pageCount: number, imageCount: number): Set<number> {
   const positions = new Set<number>()
   if (imageCount <= 0 || pageCount <= 0) return positions
 
   for (let i = 0; i < imageCount; i++) {
-    const pos = Math.floor(i * pageCount / imageCount)
-    positions.add(Math.min(pos, pageCount - 1))
+    const pos = i * 2
+    if (pos < pageCount) {
+      positions.add(pos)
+    } else {
+      // If more images than pairs, distribute remaining at the end
+      const remaining = imageCount - i
+      const startPos = pageCount - remaining
+      for (let j = i; j < imageCount; j++) {
+        positions.add(Math.max(startPos + (j - i), 0))
+      }
+      break
+    }
   }
   return positions
 }

@@ -1,0 +1,596 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState } from 'react'
+     4→     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→     5→import { ChevronLeft, ChevronRight, Check, UserPlus, Baby, Lock, Settings, Shield } from 'lucide-react'
+     6→     6→import { useAppStore, AVATARS, AGE_RANGES, STORY_STYLES, GENRES, MORALS, type ChildProfile } from '@/lib/store'
+     7→     7→
+     8→     8→const STEPS = [
+     9→     9→  { label: 'Parent Profile', icon: UserPlus },
+    10→    10→  { label: 'Set Passcode', icon: Lock },
+    11→    11→  { label: 'Add Children', icon: Baby },
+    12→    12→  { label: 'Preferences', icon: Settings },
+    13→    13→  { label: 'COPPA', icon: Shield },
+    14→    14→]
+    15→    15→
+    16→    16→export default function OnboardingPage() {
+    17→    17→  const { setPage, setParentAccount, setMode, setCurrentChildId, onboardingStep, setOnboardingStep } = useAppStore()
+    18→    18→
+    19→    19→  const [parentName, setParentName] = useState('')
+    20→    20→  const [parentEmail, setParentEmail] = useState('')
+    21→    21→  const [authMethod, setAuthMethod] = useState<'apple' | 'google' | 'passcode'>('passcode')
+    22→    22→
+    23→    23→  // Passcode state
+    24→    24→  const [passcodeEntry, setPasscodeEntry] = useState('')
+    25→    25→  const [passcodeConfirm, setPasscodeConfirm] = useState('')
+    26→    26→  const [passcodePhase, setPasscodePhase] = useState<'create' | 'confirm'>('create')
+    27→    27→  const [passcodeShakeKey, setPasscodeShakeKey] = useState(0)
+    28→    28→  const [passcodeError, setPasscodeError] = useState('')
+    29→    29→  const [confirmedPasscode, setConfirmedPasscode] = useState('')
+    30→    30→
+    31→    31→  const [children, setChildren] = useState<Partial<ChildProfile>[]>([
+    32→    32→    { name: '', ageRange: '3-5', avatar: '🦊', preferences: { favoriteGenres: [], favoriteStyles: [], preferredMoral: 'none' } },
+    33→    33→  ])
+    34→    34→
+    35→    35→  const [defaultStyle, setDefaultStyle] = useState('')
+    36→    36→  const [defaultGenre, setDefaultGenre] = useState('')
+    37→    37→  const [defaultMoral, setDefaultMoral] = useState('none')
+    38→    38→
+    39→    39→  const [coppaAgreed, setCoppaAgreed] = useState(false)
+    40→    40→
+    41→    41→  const step = onboardingStep
+    42→    42→
+    43→    43→  const canProceed = () => {
+    44→    44→    if (step === 0) return parentName.trim() !== '' && parentEmail.trim() !== ''
+    45→    45→    if (step === 1) return confirmedPasscode.length === 4
+    46→    46→    if (step === 2) return children.some((c) => c.name?.trim() !== '')
+    47→    47→    if (step === 3) return true
+    48→    48→    if (step === 4) return coppaAgreed
+    49→    49→    return false
+    50→    50→  }
+    51→    51→
+    52→    52→  const handleNext = () => {
+    53→    53→    if (step < 4) {
+    54→    54→      setOnboardingStep(step + 1)
+    55→    55→    } else {
+    56→    56→      // Complete onboarding
+    57→    57→      const validChildren = children
+    58→    58→        .filter((c) => c.name?.trim() !== '')
+    59→    59→        .map((c) => ({
+    60→    60→          id: crypto.randomUUID(),
+    61→    61→          name: c.name || '',
+    62→    62→          ageRange: c.ageRange || '3-5',
+    63→    63→          avatar: c.avatar || '🦊',
+    64→    64→          preferences: c.preferences || { favoriteGenres: [], favoriteStyles: [], preferredMoral: 'none' },
+    65→    65→          readingStats: { totalBooksRead: 0, totalPagesRead: 0, totalReadingTimeMinutes: 0, averageSessionMinutes: 0 },
+    66→    66→          vocabularyProgress: { totalWordsLearned: 0, masteredWords: [], learningWords: [], newWords: [], wordHistory: [] },
+    67→    67→          rememberMe: false,
+    68→    68→          createdAt: new Date().toISOString(),
+    69→    69→        }))
+    70→    70→
+    71→    71→      const parentAccount = {
+    72→    72→        id: crypto.randomUUID(),
+    73→    73→        name: parentName,
+    74→    74→        email: parentEmail,
+    75→    75→        authMethod,
+    76→    76→        passcode: confirmedPasscode,
+    77→    77→        children: validChildren,
+    78→    78→        subscription: { status: 'trial' as const, expiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() },
+    79→    79→        createdAt: new Date().toISOString(),
+    80→    80→      }
+    81→    81→
+    82→    82→      setParentAccount(parentAccount)
+    83→    83→      if (validChildren.length > 0) {
+    84→    84→        setCurrentChildId(validChildren[0].id)
+    85→    85→      }
+    86→    86→      setMode('child')
+    87→    87→      setPage('child-home')
+    88→    88→    }
+    89→    89→  }
+    90→    90→
+    91→    91→  const handleBack = () => {
+    92→    92→    if (step > 0) setOnboardingStep(step - 1)
+    93→    93→    else setPage('welcome')
+    94→    94→  }
+    95→    95→
+    96→    96→  const addChild = () => {
+    97→    97→    setChildren([
+    98→    98→      ...children,
+    99→    99→      { name: '', ageRange: '3-5', avatar: AVATARS[children.length % AVATARS.length], preferences: { favoriteGenres: [], favoriteStyles: [], preferredMoral: 'none' } },
+   100→   100→    ])
+   101→   101→  }
+   102→   102→
+   103→   103→  const updateChild = (index: number, updates: Partial<ChildProfile>) => {
+   104→   104→    const updated = [...children]
+   105→   105→    updated[index] = { ...updated[index], ...updates }
+   106→   106→    setChildren(updated)
+   107→   107→  }
+   108→   108→
+   109→   109→  const removeChild = (index: number) => {
+   110→   110→    if (children.length <= 1) return
+   111→   111→    setChildren(children.filter((_, i) => i !== index))
+   112→   112→  }
+   113→   113→
+   114→   114→  // Passcode numpad handler
+   115→   115→  const handlePasscodeDigit = (digit: string) => {
+   116→   116→    setPasscodeError('')
+   117→   117→    if (passcodePhase === 'create') {
+   118→   118→      if (passcodeEntry.length >= 4) return
+   119→   119→      const newPasscode = passcodeEntry + digit
+   120→   120→      setPasscodeEntry(newPasscode)
+   121→   121→      if (newPasscode.length === 4) {
+   122→   122→        // Move to confirm phase
+   123→   123→        setTimeout(() => {
+   124→   124→          setPasscodePhase('confirm')
+   125→   125→        }, 300)
+   126→   126→      }
+   127→   127→    } else {
+   128→   128→      if (passcodeConfirm.length >= 4) return
+   129→   129→      const newConfirm = passcodeConfirm + digit
+   130→   130→      setPasscodeConfirm(newConfirm)
+   131→   131→      if (newConfirm.length === 4) {
+   132→   132→        // Check if they match
+   133→   133→        if (newConfirm === passcodeEntry) {
+   134→   134→          setConfirmedPasscode(newConfirm)
+   135→   135→        } else {
+   136→   136→          // Shake and reset
+   137→   137→          setPasscodeError('Passcodes don\'t match. Try again.')
+   138→   138→          setPasscodeShakeKey((k) => k + 1)
+   139→   139→          setTimeout(() => {
+   140→   140→            setPasscodeEntry('')
+   141→   141→            setPasscodeConfirm('')
+   142→   142→            setPasscodePhase('create')
+   143→   143→            setPasscodeError('')
+   144→   144→          }, 800)
+   145→   145→        }
+   146→   146→      }
+   147→   147→    }
+   148→   148→  }
+   149→   149→
+   150→   150→  const handlePasscodeDelete = () => {
+   151→   151→    setPasscodeError('')
+   152→   152→    if (passcodePhase === 'confirm') {
+   153→   153→      setPasscodeConfirm(passcodeConfirm.slice(0, -1))
+   154→   154→    } else {
+   155→   155→      setPasscodeEntry(passcodeEntry.slice(0, -1))
+   156→   156→    }
+   157→   157→  }
+   158→   158→
+   159→   159→  const currentPasscodeValue = passcodePhase === 'create' ? passcodeEntry : passcodeConfirm
+   160→   160→
+   161→   161→  return (
+   162→   162→    <div className="min-h-screen bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950 flex flex-col p-6 relative overflow-hidden">
+   163→   163→      {/* Animated orbs */}
+   164→   164→      <motion.div
+   165→   165→        className="absolute top-20 right-10 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl"
+   166→   166→        animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.4, 0.2] }}
+   167→   167→        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+   168→   168→      />
+   169→   169→      <motion.div
+   170→   170→        className="absolute bottom-20 left-10 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl"
+   171→   171→        animate={{ scale: [1.2, 1, 1.2], opacity: [0.15, 0.3, 0.15] }}
+   172→   172→        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+   173→   173→      />
+   174→   174→
+   175→   175→      <div className="relative z-10 max-w-lg mx-auto w-full flex flex-col flex-1">
+   176→   176→        {/* Header */}
+   177→   177→        <div className="flex items-center gap-3 mb-6">
+   178→   178→          <button onClick={handleBack} className="text-purple-300 hover:text-white transition-colors">
+   179→   179→            <ChevronLeft className="w-6 h-6" />
+   180→   180→          </button>
+   181→   181→          <h1 className="text-xl font-bold text-white">Set Up InkWings</h1>
+   182→   182→        </div>
+   183→   183→
+   184→   184→        {/* Progress indicator */}
+   185→   185→        <div className="flex items-center gap-2 mb-8">
+   186→   186→          {STEPS.map((s, i) => (
+   187→   187→            <div key={i} className="flex items-center gap-2 flex-1">
+   188→   188→              <div
+   189→   189→                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+   190→   190→                  i < step
+   191→   191→                    ? 'bg-indigo-500 text-white'
+   192→   192→                    : i === step
+   193→   193→                      ? 'bg-indigo-500/30 border-2 border-indigo-400 text-indigo-300'
+   194→   194→                      : 'bg-white/10 text-white/40'
+   195→   195→                }`}
+   196→   196→              >
+   197→   197→                {i < step ? <Check className="w-4 h-4" /> : i + 1}
+   198→   198→              </div>
+   199→   199→              {i < STEPS.length - 1 && (
+   200→   200→                <div className={`flex-1 h-0.5 rounded ${i < step ? 'bg-indigo-500' : 'bg-white/10'}`} />
+   201→   201→              )}
+   202→   202→            </div>
+   203→   203→          ))}
+   204→   204→        </div>
+   205→   205→
+   206→   206→        {/* Step content */}
+   207→   207→        <AnimatePresence mode="wait">
+   208→   208→          <motion.div
+   209→   209→            key={step}
+   210→   210→            initial={{ opacity: 0, x: 20 }}
+   211→   211→            animate={{ opacity: 1, x: 0 }}
+   212→   212→            exit={{ opacity: 0, x: -20 }}
+   213→   213→            transition={{ duration: 0.3 }}
+   214→   214→            className="flex-1"
+   215→   215→          >
+   216→   216→            {/* Step 0: Parent Profile */}
+   217→   217→            {step === 0 && (
+   218→   218→              <div className="space-y-6">
+   219→   219→                <div>
+   220→   220→                  <h2 className="text-2xl font-bold text-white mb-2">Create your profile</h2>
+   221→   221→                  <p className="text-purple-200/70">Tell us about yourself to get started</p>
+   222→   222→                </div>
+   223→   223→
+   224→   224→                <div className="space-y-4">
+   225→   225→                  <div>
+   226→   226→                    <label className="text-sm font-medium text-purple-200 mb-1.5 block">Your Name</label>
+   227→   227→                    <input
+   228→   228→                      type="text"
+   229→   229→                      value={parentName}
+   230→   230→                      onChange={(e) => setParentName(e.target.value)}
+   231→   231→                      placeholder="Enter your name"
+   232→   232→                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all"
+   233→   233→                    />
+   234→   234→                  </div>
+   235→   235→                  <div>
+   236→   236→                    <label className="text-sm font-medium text-purple-200 mb-1.5 block">Email</label>
+   237→   237→                    <input
+   238→   238→                      type="email"
+   239→   239→                      value={parentEmail}
+   240→   240→                      onChange={(e) => setParentEmail(e.target.value)}
+   241→   241→                      placeholder="you@email.com"
+   242→   242→                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all"
+   243→   243→                    />
+   244→   244→                  </div>
+   245→   245→                </div>
+   246→   246→              </div>
+   247→   247→            )}
+   248→   248→
+   249→   249→            {/* Step 1: Set Passcode */}
+   250→   250→            {step === 1 && (
+   251→   251→              <div className="space-y-6 flex flex-col items-center">
+   252→   252→                <div className="text-center">
+   253→   253→                  <motion.div
+   254→   254→                    className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/30"
+   255→   255→                    initial={{ scale: 0.8, opacity: 0 }}
+   256→   256→                    animate={{ scale: 1, opacity: 1 }}
+   257→   257→                  >
+   258→   258→                    <Lock className="w-8 h-8 text-white" />
+   259→   259→                  </motion.div>
+   260→   260→                  <h2 className="text-2xl font-bold text-white mb-2">
+   261→   261→                    {passcodePhase === 'create' ? 'Create a passcode' : 'Confirm your passcode'}
+   262→   262→                  </h2>
+   263→   263→                  <p className="text-purple-200/70 text-sm">
+   264→   264→                    {passcodePhase === 'create'
+   265→   265→                      ? 'This will protect parent mode access'
+   266→   266→                      : 'Enter the passcode again to confirm'}
+   267→   267→                  </p>
+   268→   268→                </div>
+   269→   269→
+   270→   270→                {/* Digit circles */}
+   271→   271→                <motion.div
+   272→   272→                  key={passcodeShakeKey}
+   273→   273→                  className="flex justify-center gap-5 my-4"
+   274→   274→                  animate={passcodeError ? { x: [0, -12, 12, -12, 12, 0] } : {}}
+   275→   275→                  transition={{ duration: 0.5 }}
+   276→   276→                >
+   277→   277→                  {[0, 1, 2, 3].map((i) => (
+   278→   278→                    <div
+   279→   279→                      key={i}
+   280→   280→                      className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 ${
+   281→   281→                        i < currentPasscodeValue.length
+   282→   282→                          ? 'bg-indigo-500 border-2 border-indigo-400 shadow-lg shadow-indigo-500/30'
+   283→   283→                          : 'bg-white/5 border-2 border-white/20'
+   284→   284→                      }`}
+   285→   285→                    >
+   286→   286→                      {i < currentPasscodeValue.length && (
+   287→   287→                        <motion.div
+   288→   288→                          className="w-5 h-5 rounded-full bg-white"
+   289→   289→                          initial={{ scale: 0 }}
+   290→   290→                          animate={{ scale: 1 }}
+   291→   291→                          transition={{ type: 'spring', stiffness: 500 }}
+   292→   292→                        />
+   293→   293→                      )}
+   294→   294→                    </div>
+   295→   295→                  ))}
+   296→   296→                </motion.div>
+   297→   297→
+   298→   298→                {passcodeError && (
+   299→   299→                  <motion.p
+   300→   300→                    className="text-red-400 text-sm text-center"
+   301→   301→                    initial={{ opacity: 0 }}
+   302→   302→                    animate={{ opacity: 1 }}
+   303→   303→                  >
+   304→   304→                    {passcodeError}
+   305→   305→                  </motion.p>
+   306→   306→                )}
+   307→   307→
+   308→   308→                {confirmedPasscode && (
+   309→   309→                  <motion.div
+   310→   310→                    className="flex items-center gap-2 text-green-400 text-sm"
+   311→   311→                    initial={{ opacity: 0, y: 5 }}
+   312→   312→                    animate={{ opacity: 1, y: 0 }}
+   313→   313→                  >
+   314→   314→                    <Check className="w-4 h-4" />
+   315→   315→                    Passcode set successfully
+   316→   316→                  </motion.div>
+   317→   317→                )}
+   318→   318→
+   319→   319→                {/* Numpad */}
+   320→   320→                <div className="grid grid-cols-3 gap-3 max-w-[300px] mx-auto mt-2">
+   321→   321→                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => (
+   322→   322→                    <button
+   323→   323→                      key={key || 'empty'}
+   324→   324→                      onClick={() => {
+   325→   325→                        if (key === 'del') handlePasscodeDelete()
+   326→   326→                        else if (key) handlePasscodeDigit(key)
+   327→   327→                      }}
+   328→   328→                      disabled={key === '' || !!confirmedPasscode}
+   329→   329→                      className={`h-16 rounded-2xl text-2xl font-semibold transition-all ${
+   330→   330→                        key === ''
+   331→   331→                          ? 'invisible'
+   332→   332→                          : key === 'del'
+   333→   333→                            ? 'bg-white/5 text-white/60 hover:bg-white/10 active:scale-95'
+   334→   334→                            : 'bg-white/10 text-white hover:bg-white/20 active:scale-95 active:bg-white/15'
+   335→   335→                      } ${confirmedPasscode ? 'opacity-50' : ''}`}
+   336→   336→                    >
+   337→   337→                      {key === 'del' ? '⌫' : key}
+   338→   338→                    </button>
+   339→   339→                  ))}
+   340→   340→                </div>
+   341→   341→              </div>
+   342→   342→            )}
+   343→   343→
+   344→   344→            {/* Step 2: Add Children */}
+   345→   345→            {step === 2 && (
+   346→   346→              <div className="space-y-6">
+   347→   347→                <div>
+   348→   348→                  <h2 className="text-2xl font-bold text-white mb-2">Add your children</h2>
+   349→   349→                  <p className="text-purple-200/70">Create profiles for each child who will use InkWings</p>
+   350→   350→                </div>
+   351→   351→
+   352→   352→                <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
+   353→   353→                  {children.map((child, index) => (
+   354→   354→                    <motion.div
+   355→   355→                      key={index}
+   356→   356→                      className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4"
+   357→   357→                      initial={{ opacity: 0, y: 10 }}
+   358→   358→                      animate={{ opacity: 1, y: 0 }}
+   359→   359→                    >
+   360→   360→                      <div className="flex items-center justify-between mb-3">
+   361→   361→                        <span className="text-sm font-medium text-purple-200">Child {index + 1}</span>
+   362→   362→                        {children.length > 1 && (
+   363→   363→                          <button
+   364→   364→                            onClick={() => removeChild(index)}
+   365→   365→                            className="text-xs text-red-400 hover:text-red-300"
+   366→   366→                          >
+   367→   367→                            Remove
+   368→   368→                          </button>
+   369→   369→                        )}
+   370→   370→                      </div>
+   371→   371→
+   372→   372→                      <div className="space-y-3">
+   373→   373→                        <input
+   374→   374→                          type="text"
+   375→   375→                          value={child.name || ''}
+   376→   376→                          onChange={(e) => updateChild(index, { name: e.target.value })}
+   377→   377→                          placeholder="Child's first name"
+   378→   378→                          className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all text-sm"
+   379→   379→                        />
+   380→   380→
+   381→   381→                        {/* Age range */}
+   382→   382→                        <div>
+   383→   383→                          <label className="text-xs font-medium text-purple-200/70 mb-1.5 block">Age Range</label>
+   384→   384→                          <div className="flex gap-2">
+   385→   385→                            {AGE_RANGES.map((range) => (
+   386→   386→                              <button
+   387→   387→                                key={range}
+   388→   388→                                onClick={() => updateChild(index, { ageRange: range })}
+   389→   389→                                className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+   390→   390→                                  child.ageRange === range
+   391→   391→                                    ? 'bg-indigo-500 text-white'
+   392→   392→                                    : 'bg-white/5 border border-white/10 text-white/60'
+   393→   393→                                }`}
+   394→   394→                              >
+   395→   395→                                Ages {range}
+   396→   396→                              </button>
+   397→   397→                            ))}
+   398→   398→                          </div>
+   399→   399→                        </div>
+   400→   400→
+   401→   401→                        {/* Avatar selection */}
+   402→   402→                        <div>
+   403→   403→                          <label className="text-xs font-medium text-purple-200/70 mb-1.5 block">Choose Avatar</label>
+   404→   404→                          <div className="flex flex-wrap gap-2">
+   405→   405→                            {AVATARS.map((emoji) => (
+   406→   406→                              <button
+   407→   407→                                key={emoji}
+   408→   408→                                onClick={() => updateChild(index, { avatar: emoji })}
+   409→   409→                                className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all ${
+   410→   410→                                  child.avatar === emoji
+   411→   411→                                    ? 'bg-indigo-500/30 border-2 border-indigo-400 scale-110'
+   412→   412→                                    : 'bg-white/5 border border-white/10 hover:bg-white/10'
+   413→   413→                                }`}
+   414→   414→                              >
+   415→   415→                                {emoji}
+   416→   416→                              </button>
+   417→   417→                            ))}
+   418→   418→                          </div>
+   419→   419→                        </div>
+   420→   420→                      </div>
+   421→   421→                    </motion.div>
+   422→   422→                  ))}
+   423→   423→                </div>
+   424→   424→
+   425→   425→                <button
+   426→   426→                  onClick={addChild}
+   427→   427→                  className="w-full py-3 rounded-xl bg-white/5 border border-dashed border-white/20 text-purple-200 hover:bg-white/10 hover:border-white/30 transition-all flex items-center justify-center gap-2"
+   428→   428→                >
+   429→   429→                  <UserPlus className="w-4 h-4" />
+   430→   430→                  Add Another Child
+   431→   431→                </button>
+   432→   432→              </div>
+   433→   433→            )}
+   434→   434→
+   435→   435→            {/* Step 3: Preferences */}
+   436→   436→            {step === 3 && (
+   437→   437→              <div className="space-y-6">
+   438→   438→                <div>
+   439→   439→                  <h2 className="text-2xl font-bold text-white mb-2">Default preferences</h2>
+   440→   440→                  <p className="text-purple-200/70">Set default story preferences (can be changed later)</p>
+   441→   441→                </div>
+   442→   442→
+   443→   443→                <div className="space-y-5 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
+   444→   444→                  {/* Story Style */}
+   445→   445→                  <div>
+   446→   446→                    <label className="text-sm font-medium text-purple-200 mb-2 block">Favorite Story Style</label>
+   447→   447→                    <div className="grid grid-cols-2 gap-2">
+   448→   448→                      {STORY_STYLES.map((style) => (
+   449→   449→                        <button
+   450→   450→                          key={style.label}
+   451→   451→                          onClick={() => setDefaultStyle(style.label)}
+   452→   452→                          className={`p-3 rounded-xl text-left transition-all ${
+   453→   453→                            defaultStyle === style.label
+   454→   454→                              ? 'bg-indigo-500/30 border-2 border-indigo-400'
+   455→   455→                              : 'bg-white/5 border border-white/10 hover:bg-white/10'
+   456→   456→                          }`}
+   457→   457→                        >
+   458→   458→                          <span className="text-lg">{style.icon}</span>
+   459→   459→                          <p className="text-sm text-white font-medium mt-1">{style.label}</p>
+   460→   460→                          <p className="text-xs text-purple-200/60 mt-0.5">{style.description}</p>
+   461→   461→                        </button>
+   462→   462→                      ))}
+   463→   463→                    </div>
+   464→   464→                  </div>
+   465→   465→
+   466→   466→                  {/* Genre */}
+   467→   467→                  <div>
+   468→   468→                    <label className="text-sm font-medium text-purple-200 mb-2 block">Favorite Genre</label>
+   469→   469→                    <div className="flex flex-wrap gap-2">
+   470→   470→                      {GENRES.map((genre) => (
+   471→   471→                        <button
+   472→   472→                          key={genre.label}
+   473→   473→                          onClick={() => setDefaultGenre(genre.label)}
+   474→   474→                          className={`px-3 py-2 rounded-xl text-sm transition-all flex items-center gap-1.5 ${
+   475→   475→                            defaultGenre === genre.label
+   476→   476→                              ? 'bg-indigo-500 text-white'
+   477→   477→                              : 'bg-white/5 border border-white/10 text-white/70'
+   478→   478→                          }`}
+   479→   479→                        >
+   480→   480→                          <span>{genre.icon}</span>
+   481→   481→                          {genre.label}
+   482→   482→                        </button>
+   483→   483→                      ))}
+   484→   484→                    </div>
+   485→   485→                  </div>
+   486→   486→
+   487→   487→                  {/* Moral */}
+   488→   488→                  <div>
+   489→   489→                    <label className="text-sm font-medium text-purple-200 mb-2 block">Preferred Moral/Lesson</label>
+   490→   490→                    <div className="flex flex-wrap gap-2">
+   491→   491→                      {MORALS.map((moral) => (
+   492→   492→                        <button
+   493→   493→                          key={moral.value}
+   494→   494→                          onClick={() => setDefaultMoral(moral.value)}
+   495→   495→                          className={`px-3 py-2 rounded-xl text-sm transition-all ${
+   496→   496→                            defaultMoral === moral.value
+   497→   497→                              ? 'bg-indigo-500 text-white'
+   498→   498→                              : 'bg-white/5 border border-white/10 text-white/70'
+   499→   499→                          }`}
+   500→   500→                        >
+   501→   501→                          {moral.label}
+   502→   502→                        </button>
+   503→   503→                      ))}
+   504→   504→                    </div>
+   505→   505→                  </div>
+   506→   506→                </div>
+   507→   507→              </div>
+   508→   508→            )}
+   509→   509→
+   510→   510→            {/* Step 4: COPPA */}
+   511→   511→            {step === 4 && (
+   512→   512→              <div className="space-y-6">
+   513→   513→                <div>
+   514→   514→                  <h2 className="text-2xl font-bold text-white mb-2">COPPA Compliance</h2>
+   515→   515→                  <p className="text-purple-200/70">We take children&apos;s privacy seriously</p>
+   516→   516→                </div>
+   517→   517→
+   518→   518→                <div className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-5 space-y-4">
+   519→   519→                  <div className="flex items-start gap-3">
+   520→   520→                    <Shield className="w-8 h-8 text-indigo-400 mt-0.5 shrink-0" />
+   521→   521→                    <div>
+   522→   522→                      <h3 className="font-semibold text-white mb-1">Children&apos;s Online Privacy Protection</h3>
+   523→   523→                      <p className="text-sm text-purple-200/70 leading-relaxed">
+   524→   524→                        InkWings is committed to complying with the Children&apos;s Online Privacy Protection Act (COPPA).
+   525→   525→                        We only collect the minimum information necessary to provide our service and never share your
+   526→   526→                        child&apos;s data with third parties for marketing purposes.
+   527→   527→                      </p>
+   528→   528→                    </div>
+   529→   529→                  </div>
+   530→   530→
+   531→   531→                  <div className="space-y-2 text-sm text-purple-200/70">
+   532→   532→                    <p>✅ We only collect parent-verified account information</p>
+   533→   533→                    <p>✅ Child profiles are stored locally on your device</p>
+   534→   534→                    <p>✅ No personal data is sold to third parties</p>
+   535→   535→                    <p>✅ You can delete all data at any time</p>
+   536→   536→                    <p>✅ Stories are generated locally and not stored on external servers</p>
+   537→   537→                  </div>
+   538→   538→
+   539→   539→                  <div className="flex items-start gap-3 cursor-pointer group" onClick={() => setCoppaAgreed(!coppaAgreed)}>
+   540→   540→                    <div
+   541→   541→                      className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all mt-0.5 shrink-0 ${
+   542→   542→                        coppaAgreed
+   543→   543→                          ? 'bg-indigo-500 border-indigo-500'
+   544→   544→                          : 'border-white/30 group-hover:border-white/50'
+   545→   545→                      }`}
+   546→   546→                    >
+   547→   547→                      {coppaAgreed && <Check className="w-4 h-4 text-white" />}
+   548→   548→                    </div>
+   549→   549→                    <span className="text-sm text-purple-200/80 leading-relaxed">
+   550→   550→                      I confirm that I am the parent or legal guardian of the children added to this account,
+   551→   551→                      and I consent to InkWings collecting and processing the information provided as described
+   552→   552→                      in the{' '}
+   553→   553→                      <span
+   554→   554→                        onClick={(e) => { e.stopPropagation(); useAppStore.getState().setLegalPageType('privacy'); setPage('legal') }}
+   555→   555→                        className="text-indigo-400 underline hover:text-indigo-300 cursor-pointer"
+   556→   556→                      >
+   557→   557→                        Privacy Policy
+   558→   558→                      </span>
+   559→   559→                      .
+   560→   560→                    </span>
+   561→   561→                  </div>
+   562→   562→                </div>
+   563→   563→              </div>
+   564→   564→            )}
+   565→   565→          </motion.div>
+   566→   566→        </AnimatePresence>
+   567→   567→
+   568→   568→        {/* Bottom navigation */}
+   569→   569→        <div className="mt-8 flex items-center gap-3">
+   570→   570→          {step > 0 && (
+   571→   571→            <button
+   572→   572→              onClick={handleBack}
+   573→   573→              className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+   574→   574→            >
+   575→   575→              <ChevronLeft className="w-4 h-4" />
+   576→   576→              Back
+   577→   577→            </button>
+   578→   578→          )}
+   579→   579→          <button
+   580→   580→            onClick={handleNext}
+   581→   581→            disabled={!canProceed()}
+   582→   582→            className={`flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+   583→   583→              canProceed()
+   584→   584→                ? 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-lg shadow-indigo-500/30'
+   585→   585→                : 'bg-white/10 text-white/30 cursor-not-allowed'
+   586→   586→            }`}
+   587→   587→          >
+   588→   588→            {step === 4 ? 'Get Started' : 'Continue'}
+   589→   589→            <ChevronRight className="w-4 h-4" />
+   590→   590→          </button>
+   591→   591→        </div>
+   592→   592→      </div>
+   593→   593→    </div>
+   594→   594→  )
+   595→   595→}
+   596→   596→

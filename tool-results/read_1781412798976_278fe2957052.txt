@@ -1,0 +1,758 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import { ChevronLeft, ChevronRight, Sparkles, BookOpen, Image, Loader2 } from 'lucide-react'
+     6→import { useAppStore, STORY_STYLES, GENRES, MORALS, AGE_RANGES, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS, type Book, type BookPage } from '@/lib/store'
+     7→
+     8→const STEPS = [
+     9→  'Story Idea',
+    10→  'Story Style',
+    11→  'Genre',
+    12→  'Reading Level',
+    13→  'Moral / Lesson',
+    14→  'Pages & Illustrations',
+    15→  'Preview & Create',
+    16→]
+    17→
+    18→const PAGE_PRESETS = [
+    19→  { label: 'Short', emoji: '📖', pages: 6, images: 3 },
+    20→  { label: 'Medium', emoji: '📚', pages: 10, images: 5 },
+    21→  { label: 'Long', emoji: '📗', pages: 14, images: 7 },
+    22→  { label: 'Epic', emoji: '📕', pages: 20, images: 10 },
+    23→]
+    24→
+    25→// Calculate which pages get images based on imageCount and pageCount
+    26→// Images are placed at the start of each section (1 image per ~2 pages)
+    27→function getImagePositions(pageCount: number, imageCount: number): Set<number> {
+    28→  const positions = new Set<number>()
+    29→  if (imageCount <= 0 || pageCount <= 0) return positions
+    30→
+    31→  for (let i = 0; i < imageCount; i++) {
+    32→    const pos = Math.floor(i * pageCount / imageCount)
+    33→    positions.add(Math.min(pos, pageCount - 1))
+    34→  }
+    35→  return positions
+    36→}
+    37→
+    38→// Get the paired page text for an image at a given position
+    39→// Each image covers the pages from its position to the next image position
+    40→function getPairedPageText(pages: { text: string }[], imagePageIndex: number, pageCount: number, imageCount: number): string {
+    41→  const pagesPerImage = pageCount / imageCount
+    42→  const startPage = Math.floor(imagePageIndex * pagesPerImage)
+    43→  const endPage = Math.min(Math.floor((imagePageIndex + 1) * pagesPerImage) - 1, pages.length - 1)
+    44→
+    45→  let combinedText = ''
+    46→  for (let i = startPage; i <= endPage; i++) {
+    47→    if (pages[i]?.text) {
+    48→      combinedText += pages[i].text + ' '
+    49→    }
+    50→  }
+    51→  return combinedText.trim()
+    52→}
+    53→
+    54→export default function CreateBookPage() {
+    55→  const {
+    56→    setPage, currentChildId, parentAccount, addBook, setCurrentBookId,
+    57→    createBookStep, setCreateBookStep, createBookData, setCreateBookData,
+    58→    nvidiaApiKey, nvidiaStoryModel, nvidiaImageStyle,
+    59→  } = useAppStore()
+    60→
+    61→  const currentChild = parentAccount?.children.find((c) => c.id === currentChildId)
+    62→
+    63→  const [prompt, setPrompt] = useState(createBookData?.prompt || '')
+    64→  const [storyStyle, setStoryStyle] = useState(createBookData?.storyStyle || '')
+    65→  const [genre, setGenre] = useState(createBookData?.genre || '')
+    66→  const [ageRange, setAgeRange] = useState<'3-5' | '6-8' | '9-12'>(createBookData?.ageRange || currentChild?.ageRange || '3-5')
+    67→  const [moral, setMoral] = useState(createBookData?.moral || 'none')
+    68→  const [pageCount, setPageCount] = useState(createBookData?.pageCount || 6)
+    69→  const [imageCount, setImageCount] = useState(createBookData?.imageCount || 3)
+    70→  const [isGenerating, setIsGenerating] = useState(false)
+    71→  const [generationStep, setGenerationStep] = useState('')
+    72→  const [generationProgress, setGenerationProgress] = useState(0)
+    73→
+    74→  const step = createBookStep
+    75→
+    76→  // Auto-adjust imageCount when pageCount changes
+    77→  useEffect(() => {
+    78→    const maxImages = Math.min(10, pageCount)
+    79→    if (imageCount > maxImages) {
+    80→      setImageCount(maxImages)
+    81→    }
+    82→    // Default image count follows half the pages
+    83→    const defaultImageCount = Math.ceil(pageCount / 2)
+    84→    if (!createBookData?.imageCount && imageCount !== defaultImageCount) {
+    85→      setImageCount(defaultImageCount)
+    86→    }
+    87→  }, [pageCount])
+    88→
+    89→  // Save data whenever step changes
+    90→  useEffect(() => {
+    91→    setCreateBookData({ prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount })
+    92→  }, [prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, setCreateBookData])
+    93→
+    94→  const canProceed = () => {
+    95→    if (step === 0) return prompt.trim() !== ''
+    96→    if (step === 1) return storyStyle !== ''
+    97→    if (step === 2) return genre !== ''
+    98→    if (step === 3) return true
+    99→    if (step === 4) return true
+   100→    if (step === 5) return pageCount >= 4 && pageCount <= 20 && imageCount >= 1 && imageCount <= Math.min(10, pageCount)
+   101→    return true
+   102→  }
+   103→
+   104→  const handleNext = () => {
+   105→    if (step < 6) {
+   106→      setCreateBookStep(step + 1)
+   107→    } else {
+   108→      handleGenerate()
+   109→    }
+   110→  }
+   111→
+   112→  const handleBack = () => {
+   113→    if (step > 0) setCreateBookStep(step - 1)
+   114→    else setPage('child-home')
+   115→  }
+   116→
+   117→  const handleGenerate = async () => {
+   118→    setIsGenerating(true)
+   119→    setGenerationProgress(0)
+   120→
+   121→    try {
+   122→      // Step 1: Generate story text
+   123→      setGenerationStep('Creating your story...')
+   124→
+   125→      const requestBody: Record<string, unknown> = {
+   126→        prompt,
+   127→        storyStyle,
+   128→        genre,
+   129→        ageRange,
+   130→        moral,
+   131→        pageCount,
+   132→        imageCount,
+   133→        childName: currentChild?.name || 'Friend',
+   134→      }
+   135→
+   136→      // Use NVIDIA API if key is set, otherwise use default
+   137→      const storyEndpoint = nvidiaApiKey ? '/api/nvidia-story' : '/api/generate-story'
+   138→
+   139→      if (nvidiaApiKey) {
+   140→        requestBody.apiKey = nvidiaApiKey
+   141→        requestBody.model = nvidiaStoryModel
+   142→      }
+   143→
+   144→      const response = await fetch(storyEndpoint, {
+   145→        method: 'POST',
+   146→        headers: { 'Content-Type': 'application/json' },
+   147→        body: JSON.stringify(requestBody),
+   148→      })
+   149→
+   150→      if (!response.ok) throw new Error('Failed to generate story')
+   151→
+   152→      const data = await response.json()
+   153→      setGenerationProgress(30)
+   154→
+   155→      // Step 2: Plan illustrations
+   156→      setGenerationStep('Planning illustrations...')
+   157→      await new Promise((r) => setTimeout(r, 500))
+   158→      setGenerationProgress(40)
+   159→
+   160→      // Determine image positions
+   161→      const imagePositions = getImagePositions(pageCount, imageCount)
+   162→
+   163→      // Build pages with hasImage
+   164→      const pagesData: BookPage[] = (data.pages || []).map((p: { pageNumber: number; text: string; imageDescription?: string; hasImage?: boolean }, i: number) => ({
+   165→        id: crypto.randomUUID(),
+   166→        pageNumber: p.pageNumber || i + 1,
+   167→        text: p.text || '',
+   168→        imageUrl: undefined,
+   169→        imageDescription: '',
+   170→        imagePosition: 'top' as const,
+   171→        hasImage: imagePositions.has(i),
+   172→      }))
+   173→
+   174→      // Step 3: Generate images for pages that have images
+   175→      let imagesGenerated = 0
+   176→      const totalImages = imageCount
+   177→      const imagePageIndices = Array.from(imagePositions).sort((a, b) => a - b)
+   178→
+   179→      for (const pageIdx of imagePageIndices) {
+   180→        imagesGenerated++
+   181→        setGenerationStep(`Painting image ${imagesGenerated} of ${totalImages}...`)
+   182→        setGenerationProgress(40 + Math.round((imagesGenerated / totalImages) * 50))
+   183→
+   184→        // Combine text of paired pages for image prompt
+   185→        const combinedText = getPairedPageText(pagesData, imagesGenerated - 1, pageCount, imageCount)
+   186→        const imagePrompt = combinedText || data.pages[pageIdx]?.imageDescription || `A colorful watercolor illustration for page ${pageIdx + 1}`
+   187→
+   188→        try {
+   189→          const imgRequestBody: Record<string, unknown> = {
+   190→            prompt: imagePrompt,
+   191→            style: nvidiaImageStyle,
+   192→          }
+   193→
+   194→          const imgEndpoint = nvidiaApiKey ? '/api/nvidia-image' : '/api/generate-image'
+   195→
+   196→          if (nvidiaApiKey) {
+   197→            imgRequestBody.apiKey = nvidiaApiKey
+   198→          }
+   199→
+   200→          const imgResponse = await fetch(imgEndpoint, {
+   201→            method: 'POST',
+   202→            headers: { 'Content-Type': 'application/json' },
+   203→            body: JSON.stringify(imgRequestBody),
+   204→          })
+   205→
+   206→          if (imgResponse.ok) {
+   207→            const imgData = await imgResponse.json()
+   208→            if (imgData.base64) {
+   209→              pagesData[pageIdx].imageUrl = `data:image/png;base64,${imgData.base64}`
+   210→            }
+   211→          }
+   212→        } catch {
+   213→          // Image generation failed, continue without it
+   214→        }
+   215→      }
+   216→
+   217→      // Step 4: Finishing touches
+   218→      setGenerationStep('Adding finishing touches...')
+   219→      setGenerationProgress(95)
+   220→      await new Promise((r) => setTimeout(r, 300))
+   221→
+   222→      const gradientIndex = Math.floor(Math.random() * BOOK_COVER_GRADIENTS.length)
+   223→      const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
+   224→
+   225→      const book: Book = {
+   226→        id: crypto.randomUUID(),
+   227→        childId: currentChildId!,
+   228→        title: data.title || 'My Story',
+   229→        pages: pagesData,
+   230→        storyStyle,
+   231→        genre,
+   232→        moral,
+   233→        status: 'approved',
+   234→        favorite: false,
+   235→        readCount: 0,
+   236→        createdAt: new Date().toISOString(),
+   237→        coverGradient: BOOK_COVER_GRADIENTS[gradientIndex],
+   238→        coverEmoji: BOOK_COVER_EMOJIS[emojiIndex],
+   239→        imageCount,
+   240→      }
+   241→
+   242→      setGenerationProgress(100)
+   243→      addBook(book)
+   244→      setCurrentBookId(book.id)
+   245→      setPage('book-reader')
+   246→    } catch (error) {
+   247→      console.error('Generation error:', error)
+   248→      // Create a fallback book
+   249→      const gradientIndex = Math.floor(Math.random() * BOOK_COVER_GRADIENTS.length)
+   250→      const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
+   251→      const imagePositions = getImagePositions(pageCount, imageCount)
+   252→
+   253→      const fallbackBook: Book = {
+   254→        id: crypto.randomUUID(),
+   255→        childId: currentChildId!,
+   256→        title: `${currentChild?.name || 'My'} ${genre} Adventure`,
+   257→        pages: Array.from({ length: pageCount }, (_, i) => ({
+   258→          id: crypto.randomUUID(),
+   259→          pageNumber: i + 1,
+   260→          text: i === 0
+   261→            ? `Once upon a time, ${currentChild?.name || 'a brave child'} set off on a wonderful ${genre} adventure.`
+   262→            : i === pageCount - 1
+   263→              ? `And so ${currentChild?.name || 'our hero'} returned home, knowing that the best adventures are the ones shared with friends. The end! 🌟`
+   264→              : `The adventure continued with more exciting discoveries along the way. ${currentChild?.name || 'Our hero'} was having such a wonderful time!`,
+   265→          imageDescription: `A colorful illustration of ${currentChild?.name || 'a child'} on page ${i + 1}`,
+   266→          imagePosition: 'top' as const,
+   267→          hasImage: imagePositions.has(i),
+   268→        })),
+   269→        storyStyle,
+   270→        genre,
+   271→        moral,
+   272→        status: 'approved',
+   273→        favorite: false,
+   274→        readCount: 0,
+   275→        createdAt: new Date().toISOString(),
+   276→        coverGradient: BOOK_COVER_GRADIENTS[gradientIndex],
+   277→        coverEmoji: BOOK_COVER_EMOJIS[emojiIndex],
+   278→        imageCount,
+   279→      }
+   280→
+   281→      addBook(fallbackBook)
+   282→      setCurrentBookId(fallbackBook.id)
+   283→      setPage('book-reader')
+   284→    } finally {
+   285→      setIsGenerating(false)
+   286→      setGenerationStep('')
+   287→      setGenerationProgress(0)
+   288→    }
+   289→  }
+   290→
+   291→  if (isGenerating) {
+   292→    return (
+   293→      <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-indigo-50 flex flex-col items-center justify-center p-6">
+   294→        <motion.div
+   295→          className="text-center"
+   296→          initial={{ opacity: 0 }}
+   297→          animate={{ opacity: 1 }}
+   298→        >
+   299→          <motion.div
+   300→            className="w-24 h-24 rounded-3xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pink-500/30"
+   301→            animate={{ rotate: [0, 10, -10, 0] }}
+   302→            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+   303→          >
+   304→            <Sparkles className="w-12 h-12 text-white" />
+   305→          </motion.div>
+   306→          <motion.h2
+   307→            className="text-2xl font-bold text-gray-800 mb-3"
+   308→            animate={{ opacity: [0.5, 1, 0.5] }}
+   309→            transition={{ duration: 1.5, repeat: Infinity }}
+   310→          >
+   311→            {generationStep}
+   312→          </motion.h2>
+   313→          {/* Progress bar */}
+   314→          <div className="w-64 mx-auto mb-4">
+   315→            <div className="h-2 bg-purple-100 rounded-full overflow-hidden">
+   316→              <motion.div
+   317→                className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full"
+   318→                initial={{ width: 0 }}
+   319→                animate={{ width: `${generationProgress}%` }}
+   320→                transition={{ duration: 0.5 }}
+   321→              />
+   322→            </div>
+   323→            <p className="text-xs text-gray-400 mt-1">{generationProgress}% complete</p>
+   324→          </div>
+   325→          <Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto" />
+   326→          <p className="text-gray-400 text-sm mt-4">This may take a moment...</p>
+   327→        </motion.div>
+   328→      </div>
+   329→    )
+   330→  }
+   331→
+   332→  const maxImageCount = Math.min(10, pageCount)
+   333→  const imageRatio = pageCount > 0 ? (imageCount / pageCount).toFixed(1) : '0'
+   334→  const pagesPerImage = imageCount > 0 ? Math.round(pageCount / imageCount) : 0
+   335→
+   336→  return (
+   337→    <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-indigo-50 flex flex-col">
+   338→      {/* Header */}
+   339→      <div className="bg-white/80 backdrop-blur-sm border-b border-purple-100 px-4 py-3">
+   340→        <div className="max-w-lg mx-auto flex items-center gap-3">
+   341→          <button onClick={handleBack} className="text-gray-500 hover:text-gray-700 transition-colors">
+   342→            <ChevronLeft className="w-6 h-6" />
+   343→          </button>
+   344→          <div className="flex-1">
+   345→            <h1 className="text-lg font-bold text-gray-800">Create a Story</h1>
+   346→            <p className="text-xs text-purple-500">Step {step + 1} of {STEPS.length}</p>
+   347→          </div>
+   348→        </div>
+   349→      </div>
+   350→
+   351→      {/* Progress bar */}
+   352→      <div className="px-4 pt-3">
+   353→        <div className="max-w-lg mx-auto">
+   354→          <div className="h-1.5 bg-purple-100 rounded-full overflow-hidden">
+   355→            <motion.div
+   356→              className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full"
+   357→              initial={false}
+   358→              animate={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
+   359→              transition={{ duration: 0.3 }}
+   360→            />
+   361→          </div>
+   362→        </div>
+   363→      </div>
+   364→
+   365→      {/* Content */}
+   366→      <div className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
+   367→        <div className="max-w-lg mx-auto">
+   368→          <AnimatePresence mode="wait">
+   369→            <motion.div
+   370→              key={step}
+   371→              initial={{ opacity: 0, x: 20 }}
+   372→              animate={{ opacity: 1, x: 0 }}
+   373→              exit={{ opacity: 0, x: -20 }}
+   374→              transition={{ duration: 0.3 }}
+   375→            >
+   376→              {/* Step 0: Story prompt */}
+   377→              {step === 0 && (
+   378→                <div className="space-y-4">
+   379→                  <div>
+   380→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">What should the story be about?</h2>
+   381→                    <p className="text-gray-500 text-sm">Describe the story you want to create</p>
+   382→                  </div>
+   383→                  <textarea
+   384→                    value={prompt}
+   385→                    onChange={(e) => setPrompt(e.target.value)}
+   386→                    placeholder="A brave little fox who discovers a magical forest..."
+   387→                    className="w-full h-40 px-4 py-3 rounded-2xl bg-white border border-purple-100 text-gray-800 placeholder-gray-300 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all resize-none shadow-sm"
+   388→                    maxLength={500}
+   389→                  />
+   390→                  <p className="text-xs text-gray-400 text-right">{prompt.length}/500</p>
+   391→
+   392→                  {/* Quick suggestions */}
+   393→                  <div>
+   394→                    <p className="text-xs font-medium text-gray-500 mb-2">Quick ideas:</p>
+   395→                    <div className="flex flex-wrap gap-2">
+   396→                      {[
+   397→                        'A magical treehouse in the clouds',
+   398→                        'A talking animal who goes on a quest',
+   399→                        'An underwater kingdom with friendly fish',
+   400→                        'A superhero who helps their friends',
+   401→                        'A dinosaur who wants to learn to fly',
+   402→                      ].map((suggestion) => (
+   403→                        <button
+   404→                          key={suggestion}
+   405→                          onClick={() => setPrompt(suggestion)}
+   406→                          className="px-3 py-1.5 rounded-xl bg-white border border-purple-100 text-xs text-gray-600 hover:bg-purple-50 hover:border-purple-200 transition-all shadow-sm"
+   407→                        >
+   408→                          {suggestion}
+   409→                        </button>
+   410→                      ))}
+   411→                    </div>
+   412→                  </div>
+   413→                </div>
+   414→              )}
+   415→
+   416→              {/* Step 1: Story style */}
+   417→              {step === 1 && (
+   418→                <div className="space-y-4">
+   419→                  <div>
+   420→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Choose a story style</h2>
+   421→                    <p className="text-gray-500 text-sm">What kind of story should we create?</p>
+   422→                  </div>
+   423→                  <div className="grid grid-cols-2 gap-3">
+   424→                    {STORY_STYLES.map((style) => (
+   425→                      <button
+   426→                        key={style.label}
+   427→                        onClick={() => setStoryStyle(style.label)}
+   428→                        className={`p-4 rounded-2xl text-left transition-all shadow-sm ${
+   429→                          storyStyle === style.label
+   430→                            ? 'bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+   431→                            : 'bg-white border border-purple-100 hover:border-indigo-200'
+   432→                        }`}
+   433→                      >
+   434→                        <span className="text-2xl">{style.icon}</span>
+   435→                        <p className={`font-medium mt-2 ${storyStyle === style.label ? 'text-white' : 'text-gray-800'}`}>
+   436→                          {style.label}
+   437→                        </p>
+   438→                        <p className={`text-xs mt-0.5 ${storyStyle === style.label ? 'text-white/80' : 'text-gray-400'}`}>
+   439→                          {style.description}
+   440→                        </p>
+   441→                      </button>
+   442→                    ))}
+   443→                  </div>
+   444→                </div>
+   445→              )}
+   446→
+   447→              {/* Step 2: Genre */}
+   448→              {step === 2 && (
+   449→                <div className="space-y-4">
+   450→                  <div>
+   451→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Pick a genre</h2>
+   452→                    <p className="text-gray-500 text-sm">What world will the story take place in?</p>
+   453→                  </div>
+   454→                  <div className="grid grid-cols-2 gap-3">
+   455→                    {GENRES.map((g) => (
+   456→                      <button
+   457→                        key={g.label}
+   458→                        onClick={() => setGenre(g.label)}
+   459→                        className={`p-4 rounded-2xl flex items-center gap-3 transition-all shadow-sm ${
+   460→                          genre === g.label
+   461→                            ? 'bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+   462→                            : 'bg-white border border-purple-100 hover:border-indigo-200'
+   463→                        }`}
+   464→                      >
+   465→                        <span className="text-2xl">{g.icon}</span>
+   466→                        <span className={`font-medium capitalize ${genre === g.label ? 'text-white' : 'text-gray-800'}`}>
+   467→                          {g.label}
+   468→                        </span>
+   469→                      </button>
+   470→                    ))}
+   471→                  </div>
+   472→                </div>
+   473→              )}
+   474→
+   475→              {/* Step 3: Reading level */}
+   476→              {step === 3 && (
+   477→                <div className="space-y-4">
+   478→                  <div>
+   479→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Reading level</h2>
+   480→                    <p className="text-gray-500 text-sm">Select the appropriate age range for the story</p>
+   481→                  </div>
+   482→                  <div className="space-y-3">
+   483→                    {AGE_RANGES.map((range) => (
+   484→                      <button
+   485→                        key={range}
+   486→                        onClick={() => setAgeRange(range)}
+   487→                        className={`w-full p-5 rounded-2xl text-left transition-all shadow-sm ${
+   488→                          ageRange === range
+   489→                            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+   490→                            : 'bg-white border border-purple-100 hover:border-indigo-200'
+   491→                        }`}
+   492→                      >
+   493→                        <p className={`text-xl font-bold ${ageRange === range ? 'text-white' : 'text-gray-800'}`}>
+   494→                          Ages {range}
+   495→                        </p>
+   496→                        <p className={`text-sm mt-1 ${ageRange === range ? 'text-white/80' : 'text-gray-400'}`}>
+   497→                          {range === '3-5' && 'Simple words, short sentences, lots of repetition'}
+   498→                          {range === '6-8' && 'Growing vocabulary, medium-length sentences'}
+   499→                          {range === '9-12' && 'Rich vocabulary, complex narratives and themes'}
+   500→                        </p>
+   501→                      </button>
+   502→                    ))}
+   503→                  </div>
+   504→                </div>
+   505→              )}
+   506→
+   507→              {/* Step 4: Moral */}
+   508→              {step === 4 && (
+   509→                <div className="space-y-4">
+   510→                  <div>
+   511→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Moral or lesson</h2>
+   512→                    <p className="text-gray-500 text-sm">Should the story teach something?</p>
+   513→                  </div>
+   514→                  <div className="space-y-2">
+   515→                    {MORALS.map((m) => (
+   516→                      <button
+   517→                        key={m.value}
+   518→                        onClick={() => setMoral(m.value)}
+   519→                        className={`w-full p-4 rounded-2xl text-left transition-all shadow-sm ${
+   520→                          moral === m.value
+   521→                            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+   522→                            : 'bg-white border border-purple-100 hover:border-indigo-200'
+   523→                        }`}
+   524→                      >
+   525→                        <span className={`font-medium ${moral === m.value ? 'text-white' : 'text-gray-800'}`}>
+   526→                          {m.label}
+   527→                        </span>
+   528→                      </button>
+   529→                    ))}
+   530→                  </div>
+   531→                </div>
+   532→              )}
+   533→
+   534→              {/* Step 5: Pages & Illustrations */}
+   535→              {step === 5 && (
+   536→                <div className="space-y-5">
+   537→                  <div>
+   538→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Pages & Illustrations</h2>
+   539→                    <p className="text-gray-500 text-sm">Choose the length and how many illustrations to include</p>
+   540→                  </div>
+   541→
+   542→                  {/* Quick Presets */}
+   543→                  <div>
+   544→                    <p className="text-xs font-medium text-gray-500 mb-2">Quick presets:</p>
+   545→                    <div className="grid grid-cols-4 gap-2">
+   546→                      {PAGE_PRESETS.map((preset) => (
+   547→                        <button
+   548→                          key={preset.label}
+   549→                          onClick={() => {
+   550→                            setPageCount(preset.pages)
+   551→                            setImageCount(preset.images)
+   552→                          }}
+   553→                          className={`py-3 px-2 rounded-xl text-center transition-all shadow-sm ${
+   554→                            pageCount === preset.pages && imageCount === preset.images
+   555→                              ? 'bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+   556→                              : 'bg-white border border-purple-100 hover:border-indigo-200'
+   557→                          }`}
+   558→                        >
+   559→                          <span className="text-lg block">{preset.emoji}</span>
+   560→                          <p className={`text-sm font-bold mt-1 ${pageCount === preset.pages && imageCount === preset.images ? 'text-white' : 'text-gray-800'}`}>
+   561→                            {preset.label}
+   562→                          </p>
+   563→                          <p className={`text-[10px] ${pageCount === preset.pages && imageCount === preset.images ? 'text-white/80' : 'text-gray-400'}`}>
+   564→                            {preset.pages}p / {preset.images}i
+   565→                          </p>
+   566→                        </button>
+   567→                      ))}
+   568→                    </div>
+   569→                  </div>
+   570→
+   571→                  {/* Page Count Slider */}
+   572→                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100">
+   573→                    <div className="flex items-center justify-between mb-3">
+   574→                      <div className="flex items-center gap-2">
+   575→                        <BookOpen className="w-4 h-4 text-purple-500" />
+   576→                        <span className="font-semibold text-gray-800">Pages</span>
+   577→                      </div>
+   578→                      <span className="text-2xl font-bold text-gray-800">{pageCount}</span>
+   579→                    </div>
+   580→                    <input
+   581→                      type="range"
+   582→                      min={4}
+   583→                      max={20}
+   584→                      step={1}
+   585→                      value={pageCount}
+   586→                      onChange={(e) => setPageCount(parseInt(e.target.value))}
+   587→                      className="w-full h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
+   588→                      style={{ touchAction: 'none' }}
+   589→                    />
+   590→                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+   591→                      <span>4</span>
+   592→                      <span>20</span>
+   593→                    </div>
+   594→                    <p className="text-xs text-gray-400 text-center mt-2">
+   595→                      {pageCount <= 6 ? '📖 Short & sweet story' : pageCount <= 10 ? '📖 Perfect bedtime story' : pageCount <= 14 ? '📖 Extended adventure' : '📖 Epic saga'}
+   596→                    </p>
+   597→                  </div>
+   598→
+   599→                  {/* Image Count Slider */}
+   600→                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100">
+   601→                    <div className="flex items-center justify-between mb-3">
+   602→                      <div className="flex items-center gap-2">
+   603→                        <Image className="w-4 h-4 text-purple-500" />
+   604→                        <span className="font-semibold text-gray-800">Illustrations</span>
+   605→                      </div>
+   606→                      <span className="text-2xl font-bold text-gray-800">{imageCount}</span>
+   607→                    </div>
+   608→                    <input
+   609→                      type="range"
+   610→                      min={1}
+   611→                      max={maxImageCount}
+   612→                      step={1}
+   613→                      value={imageCount}
+   614→                      onChange={(e) => setImageCount(parseInt(e.target.value))}
+   615→                      className="w-full h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
+   616→                      style={{ touchAction: 'none' }}
+   617→                    />
+   618→                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+   619→                      <span>1</span>
+   620→                      <span>{maxImageCount}</span>
+   621→                    </div>
+   622→                    <div className="mt-3 flex items-center justify-center gap-2">
+   623→                      <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-medium">
+   624→                        1 image every ~{pagesPerImage} pages
+   625→                      </span>
+   626→                    </div>
+   627→                  </div>
+   628→
+   629→                  {/* Visual Summary */}
+   630→                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-purple-100">
+   631→                    <p className="text-xs font-medium text-gray-500 mb-2">Preview layout:</p>
+   632→                    <div className="flex flex-wrap gap-1.5">
+   633→                      {Array.from({ length: pageCount }, (_, i) => {
+   634→                        const imagePositions = getImagePositions(pageCount, imageCount)
+   635→                        const hasImg = imagePositions.has(i)
+   636→                        return (
+   637→                          <div
+   638→                            key={i}
+   639→                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-medium ${
+   640→                              hasImg
+   641→                                ? 'bg-gradient-to-br from-pink-200 to-purple-200 text-purple-700 border border-purple-300'
+   642→                                : 'bg-gray-50 text-gray-400 border border-gray-100'
+   643→                            }`}
+   644→                          >
+   645→                            {hasImg ? '🖼️' : i + 1}
+   646→                          </div>
+   647→                        )
+   648→                      })}
+   649→                    </div>
+   650→                    <p className="text-[10px] text-gray-400 mt-2">
+   651→                      🖼️ = page with illustration &nbsp;|&nbsp; Number = text-only page
+   652→                    </p>
+   653→                  </div>
+   654→                </div>
+   655→              )}
+   656→
+   657→              {/* Step 6: Preview */}
+   658→              {step === 6 && (
+   659→                <div className="space-y-4">
+   660→                  <div>
+   661→                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Ready to create!</h2>
+   662→                    <p className="text-gray-500 text-sm">Review your story settings</p>
+   663→                  </div>
+   664→                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100 space-y-4">
+   665→                    <div>
+   666→                      <p className="text-xs font-medium text-gray-400 uppercase">Story Idea</p>
+   667→                      <p className="text-gray-800 mt-1">{prompt}</p>
+   668→                    </div>
+   669→                    <div className="grid grid-cols-2 gap-4">
+   670→                      <div>
+   671→                        <p className="text-xs font-medium text-gray-400 uppercase">Style</p>
+   672→                        <p className="text-gray-800 mt-1">{STORY_STYLES.find((s) => s.label === storyStyle)?.icon} {storyStyle}</p>
+   673→                      </div>
+   674→                      <div>
+   675→                        <p className="text-xs font-medium text-gray-400 uppercase">Genre</p>
+   676→                        <p className="text-gray-800 mt-1 capitalize">{GENRES.find((g) => g.label === genre)?.icon} {genre}</p>
+   677→                      </div>
+   678→                      <div>
+   679→                        <p className="text-xs font-medium text-gray-400 uppercase">Reading Level</p>
+   680→                        <p className="text-gray-800 mt-1">Ages {ageRange}</p>
+   681→                      </div>
+   682→                      <div>
+   683→                        <p className="text-xs font-medium text-gray-400 uppercase">Moral</p>
+   684→                        <p className="text-gray-800 mt-1">{MORALS.find((m) => m.value === moral)?.label}</p>
+   685→                      </div>
+   686→                    </div>
+   687→                    <div className="grid grid-cols-2 gap-4">
+   688→                      <div>
+   689→                        <p className="text-xs font-medium text-gray-400 uppercase">Pages</p>
+   690→                        <p className="text-gray-800 mt-1">{pageCount} pages</p>
+   691→                      </div>
+   692→                      <div>
+   693→                        <p className="text-xs font-medium text-gray-400 uppercase">Illustrations</p>
+   694→                        <p className="text-gray-800 mt-1">{imageCount} images ({nvidiaImageStyle} style)</p>
+   695→                      </div>
+   696→                    </div>
+   697→                  </div>
+   698→
+   699→                  <div className="bg-purple-50 rounded-2xl p-4 border border-purple-100">
+   700→                    <p className="text-sm text-purple-700">
+   701→                      ✨ Your story will be personalized for <strong>{currentChild?.name || 'your child'}</strong> with age-appropriate
+   702→                      content and {imageCount} beautiful {nvidiaImageStyle} illustrations across {pageCount} pages.
+   703→                    </p>
+   704→                  </div>
+   705→
+   706→                  {nvidiaApiKey && (
+   707→                    <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+   708→                      <p className="text-sm text-amber-700">
+   709→                        🚀 Using NVIDIA API ({nvidiaStoryModel}) for story generation
+   710→                      </p>
+   711→                    </div>
+   712→                  )}
+   713→                </div>
+   714→              )}
+   715→            </motion.div>
+   716→          </AnimatePresence>
+   717→        </div>
+   718→      </div>
+   719→
+   720→      {/* Bottom navigation */}
+   721→      <div className="bg-white/90 backdrop-blur-sm border-t border-purple-100 px-4 py-3">
+   722→        <div className="max-w-lg mx-auto flex items-center gap-3">
+   723→          {step > 0 && (
+   724→            <button
+   725→              onClick={handleBack}
+   726→              className="flex-1 py-3 rounded-xl bg-white border border-purple-100 text-gray-700 font-medium hover:bg-purple-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+   727→            >
+   728→              <ChevronLeft className="w-4 h-4" />
+   729→              Back
+   730→            </button>
+   731→          )}
+   732→          <button
+   733→            onClick={handleNext}
+   734→            disabled={!canProceed()}
+   735→            className={`flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+   736→              canProceed()
+   737→                ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg shadow-pink-500/30 hover:shadow-xl'
+   738→                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+   739→            }`}
+   740→          >
+   741→            {step === 6 ? (
+   742→              <>
+   743→                <Sparkles className="w-4 h-4" />
+   744→                Create Story
+   745→              </>
+   746→            ) : (
+   747→              <>
+   748→                Continue
+   749→                <ChevronRight className="w-4 h-4" />
+   750→              </>
+   751→            )}
+   752→          </button>
+   753→        </div>
+   754→      </div>
+   755→    </div>
+   756→  )
+   757→}
+   758→

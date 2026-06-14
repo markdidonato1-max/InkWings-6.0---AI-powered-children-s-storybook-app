@@ -10,14 +10,22 @@ const STYLE_PROMPTS: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    const { prompt, style } = await request.json()
+    const { prompt, style, referenceImage } = await request.json()
 
     const stylePrompt = STYLE_PROMPTS[style || 'watercolor'] || STYLE_PROMPTS.watercolor
+
+    // If a reference image (child's drawing) is provided, enhance the prompt
+    let fullPrompt: string
+    if (referenceImage) {
+      fullPrompt = `Transform this child's drawing into a professional ${stylePrompt}: ${prompt}. Maintain the core composition and subject matter from the original drawing while applying the ${style || 'watercolor'} artistic style. Keep it whimsical and child-friendly.`
+    } else {
+      fullPrompt = `${stylePrompt}: ${prompt}`
+    }
 
     const zai = await ZAI.create()
 
     const response = await zai.images.generations.create({
-      prompt: `${stylePrompt}: ${prompt}`,
+      prompt: fullPrompt,
       size: '1024x1024',
     })
 

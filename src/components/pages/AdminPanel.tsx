@@ -5,10 +5,16 @@ import { motion } from 'framer-motion'
 import { ChevronLeft, Send, Activity, DollarSign, Zap, Key, Image, BookOpen, Cpu, Palette, CheckCircle, XCircle } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 
-const NVIDIA_MODELS = [
+const NVIDIA_STORY_MODELS = [
   { value: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', description: 'Best for creative writing' },
   { value: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6', description: 'Alternative creative model' },
   { value: 'glm-4', label: 'GLM-4', description: 'General purpose model' },
+]
+
+const NVIDIA_IMAGE_MODELS = [
+  { value: 'stabilityai/stable-diffusion-xl', label: 'SDXL', description: 'Stable Diffusion XL - versatile' },
+  { value: 'stabilityai/stable-diffusion-3-medium', label: 'SD3 Medium', description: 'SD3 - improved quality' },
+  { value: 'black-forest-labs/flux-1-schnell', label: 'Flux Schnell', description: 'Fast generation' },
 ]
 
 const IMAGE_STYLES = [
@@ -23,7 +29,7 @@ export default function AdminPanel() {
   const {
     setPage, adminApiKey, setAdminApiKey, adminCallLogs, addAdminCallLog,
     nvidiaApiKey, setNvidiaApiKey, nvidiaStoryModel, setNvidiaStoryModel,
-    nvidiaImageStyle, setNvidiaImageStyle,
+    nvidiaImageStyle, setNvidiaImageStyle, nvidiaImageModel, setNvidiaImageModel,
   } = useAppStore()
 
   const [testPrompt, setTestPrompt] = useState('')
@@ -226,7 +232,7 @@ export default function AdminPanel() {
                 Story Generation Model
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {NVIDIA_MODELS.map((model) => (
+                {NVIDIA_STORY_MODELS.map((model) => (
                   <button
                     key={model.value}
                     onClick={() => setNvidiaStoryModel(model.value)}
@@ -245,6 +251,35 @@ export default function AdminPanel() {
               </div>
               <p className="text-[10px] text-gray-500 mt-1.5">
                 Currently: <span className="text-green-400">{nvidiaStoryModel}</span>
+              </p>
+            </div>
+
+            {/* Image Model Selector */}
+            <div className="mb-4">
+              <label className="text-sm text-gray-400 mb-2 block flex items-center gap-1.5">
+                <Image className="w-3.5 h-3.5" />
+                Image Generation Model
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {NVIDIA_IMAGE_MODELS.map((model) => (
+                  <button
+                    key={model.value}
+                    onClick={() => setNvidiaImageModel(model.value)}
+                    className={`p-3 rounded-xl text-left transition-all ${
+                      nvidiaImageModel === model.value
+                        ? 'bg-green-500/20 border-2 border-green-400'
+                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                    }`}
+                  >
+                    <p className={`text-sm font-medium ${nvidiaImageModel === model.value ? 'text-green-300' : 'text-white/70'}`}>
+                      {model.label}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">{model.description}</p>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1.5">
+                Currently: <span className="text-green-400">{nvidiaImageModel}</span>
               </p>
             </div>
 

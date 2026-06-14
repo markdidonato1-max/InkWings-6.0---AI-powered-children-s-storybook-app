@@ -5,8 +5,28 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, X, Heart, Loader2 } from 'lucide-react'
 import { useAppStore, type BookPage } from '@/lib/store'
 
+// Get the text of the pages surrounding an image for the prompt
+// Image i covers pages (2i) and (2i+1). If odd pages, last image covers 1 page.
+function getImagePromptText(pages: { text: string }[], currentPageIndex: number, totalImageCount: number): string {
+  // Find which image index this page corresponds to
+  // Images are placed every 2 pages: image i is at page (2i)
+  const imageIndex = Math.floor(currentPageIndex / 2)
+
+  // The image covers pages (2*imageIndex) and (2*imageIndex+1)
+  const startPage = imageIndex * 2
+  const endPage = Math.min(startPage + 1, pages.length - 1)
+
+  let combinedText = ''
+  for (let i = startPage; i <= endPage; i++) {
+    if (pages[i]?.text) {
+      combinedText += pages[i].text + ' '
+    }
+  }
+  return combinedText.trim()
+}
+
 export default function BookReaderPage() {
-  const { currentBookId, books, setPage, toggleFavorite, incrementReadCount, updateBook, nvidiaApiKey, nvidiaImageStyle } = useAppStore()
+  const { currentBookId, books, setPage, toggleFavorite, incrementReadCount, updateBook, nvidiaApiKey, nvidiaImageStyle, nvidiaImageModel } = useAppStore()
   const book = books.find((b) => b.id === currentBookId)
 
   const [currentPage, setCurrentPage] = useState(0)
@@ -42,8 +62,10 @@ export default function BookReaderPage() {
 
     const generateImage = async () => {
       try {
-        // Build the image prompt from the page text and/or imageDescription
-        const imagePrompt = page.imageDescription || page.text || `Illustration for page ${currentPage + 1}`
+        // Build the image prompt from the text of the surrounding pages
+        // Image i covers pages (2i) and (2i+1); if odd pages, last covers 1
+        const surroundingText = getImagePromptText(book.pages, currentPage, book.imageCount)
+        const imagePrompt = surroundingText || page.imageDescription || page.text || `Illustration for page ${currentPage + 1}`
 
         const requestBody: Record<string, unknown> = {
           prompt: imagePrompt,
@@ -54,6 +76,7 @@ export default function BookReaderPage() {
 
         if (nvidiaApiKey) {
           requestBody.apiKey = nvidiaApiKey
+          requestBody.model = nvidiaImageModel
         }
 
         const response = await fetch(imgEndpoint, {
@@ -84,7 +107,7 @@ export default function BookReaderPage() {
       clearTimeout(timer)
       setLoadingImage(false)
     }
-  }, [currentPage, book, updateBook, nvidiaApiKey, nvidiaImageStyle])
+  }, [currentPage, book, updateBook, nvidiaApiKey, nvidiaImageStyle, nvidiaImageModel])
 
   if (!book) {
     return (
