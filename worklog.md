@@ -147,3 +147,29 @@ Stage Summary:
 - Age-appropriate word counts enforced in AI story generation prompts
 - Better error logging and faster fallback on image generation failures
 - All changes compile and build successfully
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix API key failures and update word counts per page for children's books by age range
+
+Work Log:
+- Explored the full InkWings codebase to understand architecture
+- Researched industry-standard word counts per page for children's books
+- Fixed image generation: Made ZAI SDK the PRIMARY image generation method (was secondary before)
+  - Previously: NVIDIA API was tried first, ZAI SDK was fallback
+  - Now: ZAI SDK is tried first (always available, reliable), NVIDIA API is fallback
+- Removed hardcoded (likely expired) NVIDIA API key from store.ts default value
+- Updated word counts per page in BOTH story generation routes (nvidia-story + generate-story):
+  - Ages 3-5: 15-25 → 20-40 words (picture book standard: 15-35 wpp)
+  - Ages 6-8: 30-50 → 50-100 words (early reader/chapter book standard: 40-100 wpp)
+  - Ages 9-12: 50-80 → 120-200 words (middle grade standard: 120-250 wpp)
+- Updated all fallback stories in both routes AND CreateBookPage.tsx to match new word counts
+- Updated vocabulary guidance and examples for each age range
+- Strengthened prompt language to emphasize word count importance
+- Built successfully and restarted server
+
+Stage Summary:
+- Image generation now uses ZAI SDK first (reliable, always available) - should fix the API key failures
+- Word counts per page now align with published children's book industry standards
+- All 4 files modified: nvidia-image/route.ts, nvidia-story/route.ts, generate-story/route.ts, CreateBookPage.tsx, store.ts
+- Server running on port 3000

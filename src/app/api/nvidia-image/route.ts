@@ -1,6 +1,6 @@
-// NVIDIA API Image Generation Route
-// Primary: Uses z-ai-web-dev-sdk for image generation (reliable)
-// Secondary: Tries NVIDIA API if available image models are found
+// Image Generation Route
+// Primary: Uses z-ai-web-dev-sdk for image generation (most reliable, built into platform)
+// Secondary: Tries NVIDIA API if a valid image model API key is provided
 // When a referenceImage (child's drawing) is provided, enhances the prompt
 
 import ZAI from 'z-ai-web-dev-sdk'
@@ -34,12 +34,34 @@ export async function POST(request: Request) {
       fullPrompt = fullPrompt.substring(0, 2000)
     }
 
-    // Try NVIDIA image generation first only if a specific image model is provided
-    // Note: Most NVIDIA API keys only have text/chat models, not image generation models
-    // If no model is provided, skip NVIDIA and go straight to ZAI SDK
+    // ── Primary: ZAI SDK image generation (most reliable, always available) ──
+    try {
+      console.log('[nvidia-image] Using ZAI SDK for image generation (primary)')
+      const zai = await ZAI.create()
+
+      const response = await zai.images.generations.create({
+        prompt: fullPrompt,
+        size: '1024x1024',
+      })
+
+      const base64 = response.data[0]?.base64
+
+      if (base64) {
+        console.log(`[nvidia-image] Success via ZAI SDK (length: ${base64.length})`)
+        return Response.json({ base64 })
+      }
+
+      console.log('[nvidia-image] ZAI SDK returned no base64, trying NVIDIA fallback...')
+    } catch (zaiError) {
+      console.log('[nvidia-image] ZAI SDK failed, trying NVIDIA fallback:', zaiError instanceof Error ? zaiError.message : String(zaiError))
+    }
+
+    // ── Secondary: NVIDIA API image generation (only if API key + valid image model provided) ──
+    // Most NVIDIA API keys only have text/chat models, not image generation models
+    // Only attempt NVIDIA if a specific image model is provided (not text models)
     if (apiKey && model && !model.includes('nemotron') && !model.includes('llama') && !model.includes('kimi') && !model.includes('glm')) {
       try {
-        console.log(`[nvidia-image] Trying NVIDIA model: ${model}`)
+        console.log(`[nvidia-image] Trying NVIDIA model as fallback: ${model}`)
 
         const nvidiaBody: Record<string, unknown> = {
           model: model,
@@ -79,7 +101,7 @@ export async function POST(request: Request) {
         if (response.ok) {
           const data = await response.json()
           if (data.data?.[0]?.b64_json) {
-            console.log(`[nvidia-image] Success via NVIDIA (${model})`)
+            console.log(`[nvidia-image] Success via NVIDIA fallback (${model})`)
             return Response.json({ base64: data.data[0].b64_json })
           }
           if (data.data?.[0]?.url) {
@@ -91,40 +113,21 @@ export async function POST(request: Request) {
             }
           }
         } else {
-          console.log(`[nvidia-image] NVIDIA API returned ${response.status}, falling back to ZAI SDK`)
+          const errorText = await response.text().catch(() => '')
+          console.log(`[nvidia-image] NVIDIA API returned ${response.status}: ${errorText.substring(0, 200)}`)
         }
       } catch (nvidiaError: unknown) {
         const msg = nvidiaError instanceof Error ? nvidiaError.message : String(nvidiaError)
-        console.log(`[nvidia-image] NVIDIA attempt failed: ${msg}, falling back to ZAI SDK`)
+        console.log(`[nvidia-image] NVIDIA fallback failed: ${msg}`)
       }
     }
 
-    // Primary fallback: z-ai-web-dev-sdk (reliable image generation)
-    try {
-      console.log('[nvidia-image] Using ZAI SDK for image generation')
-      const zai = await ZAI.create()
-
-      const response = await zai.images.generations.create({
-        prompt: fullPrompt,
-        size: '1024x1024',
-      })
-
-      const base64 = response.data[0]?.base64
-
-      if (!base64) {
-        console.error('[nvidia-image] ZAI SDK returned no base64')
-        return Response.json({ error: 'No image generated' }, { status: 500 })
-      }
-
-      console.log(`[nvidia-image] Success via ZAI SDK (length: ${base64.length})`)
-      return Response.json({ base64 })
-    } catch (zaiError) {
-      console.error('[nvidia-image] ZAI SDK also failed:', zaiError)
-      return Response.json(
-        { error: 'Failed to generate image. Please try again.' },
-        { status: 500 }
-      )
-    }
+    // All methods failed
+    console.error('[nvidia-image] All image generation methods failed')
+    return Response.json(
+      { error: 'Failed to generate image. Please try again.' },
+      { status: 500 }
+    )
   } catch (error) {
     console.error('[nvidia-image] Route error:', error)
     return Response.json(

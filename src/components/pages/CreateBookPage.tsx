@@ -324,19 +324,42 @@ export default function CreateBookPage() {
       const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
       const imagePositions = getImagePositions(pageCount, imageCount)
 
+      // Age-appropriate fallback texts
+      const childName = currentChild?.name || 'Friend'
+      const fallbackTexts: Record<string, string[]> = {
+        '3-5': [
+          `Once upon a time, ${childName} found a magic door in the garden. "Wow!" said ${childName}, eyes wide with wonder. What could be inside? Knock, knock! The door creaked open slowly.`,
+          `${childName} opened the door. Pop! Out came a little star, twinkling bright. "Hello!" said the star, dancing in the air. "I am Starry!" ${childName} clapped with joy.`,
+          `The star and ${childName} danced and played in the garden. Spin, spin, spin! "This is so much fun!" laughed ${childName}. The flowers swayed to the music.`,
+          `"I must go home now," said Starry, glowing softly. "But we can play again tomorrow!" ${childName} hugged the little star. "Promise?" asked ${childName}. "Promise!" said Starry.`,
+          `${childName} waved goodbye as Starry floated up, up, up into the night sky. "See you soon, friend!" ${childName} whispered. And every night, the star twinkled just for them. The end.`,
+        ],
+        '6-8': [
+          `One sunny morning, ${childName} discovered a mysterious path winding through the whispering trees. The leaves shimmered like golden coins in the sunlight, and tiny blue flowers dotted the trail. "I wonder where this leads?" ${childName} thought, stepping carefully along the mossy stones. A butterfly with wings like stained glass fluttered ahead, as if beckoning them forward.`,
+          `Following the butterfly, ${childName} arrived at a sparkling stream where the water sang a gentle melody. A friendly turtle with emerald-green eyes sat on a smooth rock, wearing a tiny silver pendant. "Welcome, traveler!" said the turtle with a warm smile. "I've been expecting someone with a kind heart." ${childName} sat down beside the stream, curious about what the turtle might say next.`,
+          `"The Crystal Flower that lights our forest has stopped glowing," the turtle explained, his voice full of worry. "Without its light, the forest creatures are lost in the shadows. Only someone brave and kind can restore it." ${childName} looked at the dark patches between the trees and felt a surge of determination. "I will help!" ${childName} declared, standing tall.`,
+          `Together, ${childName} and the turtle journeyed deeper into the enchanted woods, where fireflies danced like tiny lanterns and mushrooms glowed in soft blues and purples. The path grew narrow and twisty, but ${childName} wasn't afraid. "The forest is counting on us," ${childName} whispered, and the turtle nodded bravely by their side.`,
+          `At last, they found the Crystal Flower in a hidden glade, its petals dull and gray. ${childName} knelt beside it and spoke the kindest words they knew — words about hope and friendship and never giving up. Slowly, the petals began to shimmer, then burst into brilliant rainbow light! The whole forest sparkled with joy, and every creature cheered. ${childName} had saved the day!`,
+        ],
+        '9-12': [
+          `${childName} had always been curious about the old lighthouse perched on the cliff above the harbor. Its beam hadn't shone in years, not since the old keeper disappeared one stormy night. But tonight, something was different. A faint pulse of light flickered from the lantern room at the top — not the bright beam it once was, but a weak, rhythmic glow, like a heartbeat. ${childName} pressed a hand against the cold window, watching the light blink on and off in an unmistakable pattern. Three short, two long, three short. It was a signal. Someone — or something — was calling for help.`,
+          `Pushing open the rusted door, ${childName} stepped into the damp, salt-tinged air of the lighthouse interior. A spiral staircase wound upward into darkness, its iron railings slick with moisture. The walls were covered in maps and charts of places that couldn't possibly exist — islands floating in clouds, forests made entirely of crystal, seas that glowed phosphorescent green. ${childName} paused at one map that showed the coastline as it looked a hundred years ago, with landmarks that had long since crumbled into the sea. "Who drew all these?" ${childName} wondered aloud, running a finger along the faded ink.`,
+          `At the top of the staircase, ${childName} found the lantern room — and a small creature with luminous wings perched beside the broken lamp. It was no bigger than a cat, with eyes like polished amber and wings that shed tiny motes of golden light. "You came," it whispered, its voice like wind chimes. "The lighthouse doesn't guide ships anymore, ${childName}. It guides lost stories home — stories that have been forgotten, tales that have been abandoned. And the lamp is dying." The creature's wings flickered anxiously, casting dancing shadows across the curved glass walls.`,
+          `${childName} knelt beside the ancient lamp and saw that its power source — a ring of crystals arranged in a circle — had been knocked out of alignment. Each crystal hummed with a different color when touched: sapphire blue, ruby red, emerald green, amethyst purple. Working carefully, ${childName} reconnected each crystal, listening to the tone it made and adjusting until the harmonics aligned. As the final crystal clicked into place, images of forgotten tales filled the room — pirate adventures, dragon flights, underwater kingdoms — all swirling like living paintings in the lamp's rekindled glow.`,
+          `The lamp blazed to life, sending a brilliant rainbow beam sweeping across the dark sky. Somewhere far away, stories that had been lost for generations were finally finding their way back to the world, appearing as books on dusty shelves and songs on quiet lips. ${childName} smiled, watching the beam rotate steadily, knowing the lighthouse would never go dark again. The winged creature perched on ${childName}'s shoulder, its wings glowing brighter than ever. "Thank you," it said softly. "And ${childName} — you are always welcome here." The night had never looked so full of stories.`,
+        ],
+      }
+      const fallbackTextArray = fallbackTexts[ageRange] || fallbackTexts['3-5']
+
       const fallbackBook: Book = {
         id: crypto.randomUUID(),
         childId: currentChildId!,
-        title: `${currentChild?.name || 'My'} ${genre} Adventure`,
+        title: `${childName}'s ${genre} Adventure`,
         pages: Array.from({ length: pageCount }, (_, i) => ({
           id: crypto.randomUUID(),
           pageNumber: i + 1,
-          text: i === 0
-            ? `Once upon a time, ${currentChild?.name || 'a brave child'} set off on a wonderful ${genre} adventure.`
-            : i === pageCount - 1
-              ? `And so ${currentChild?.name || 'our hero'} returned home, knowing that the best adventures are the ones shared with friends. The end! 🌟`
-              : `The adventure continued with more exciting discoveries along the way. ${currentChild?.name || 'Our hero'} was having such a wonderful time!`,
-          imageDescription: `A colorful illustration of ${currentChild?.name || 'a child'} on page ${i + 1}`,
+          text: fallbackTextArray[i % fallbackTextArray.length],
+          imageDescription: `A colorful illustration of ${childName} on page ${i + 1}`,
           imagePosition: 'top' as const,
           hasImage: imagePositions.has(i),
         })),

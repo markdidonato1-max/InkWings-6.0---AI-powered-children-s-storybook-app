@@ -195,7 +195,7 @@ export const useAppStore = create<AppState>()(
       adminApiKey: '',
       adminCallLogs: [],
 
-      nvidiaApiKey: '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',
+      nvidiaApiKey: '',
       nvidiaStoryModel: 'nvidia/nemotron-3-ultra-550b-a55b',
       nvidiaImageStyle: 'watercolor',
       nvidiaImageModel: 'stabilityai/stable-diffusion-xl',
