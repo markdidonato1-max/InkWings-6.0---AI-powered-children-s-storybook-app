@@ -5,7 +5,7 @@ import { BookOpen, ArrowRight, Repeat, Plus, Home, Settings, Sparkles, BookMarke
 import { useAppStore, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS } from '@/lib/store'
 
 export default function ChildHomePage() {
-  const { parentAccount, currentChildId, books, setPage, setMode, setCurrentChildId } = useAppStore()
+  const { parentAccount, currentChildId, books, setPage, setCurrentChildId } = useAppStore()
 
   const currentChild = parentAccount?.children.find((c) => c.id === currentChildId)
   const childBooks = books.filter((b) => b.childId === currentChildId)
@@ -43,8 +43,7 @@ export default function ChildHomePage() {
           </div>
           <button
             onClick={() => {
-              setMode(null)
-              setPage('select-mode')
+              setPage('parent-auth')
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-100 text-purple-600 text-sm font-medium hover:bg-purple-200 transition-colors"
           >

@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, X, Heart, Loader2 } from 'lucide-react'
-import { useAppStore, type Book, type BookPage } from '@/lib/store'
+import { useAppStore, type BookPage } from '@/lib/store'
 
 export default function BookReaderPage() {
-  const { currentBookId, books, setPage, toggleFavorite, incrementReadCount, updateBook } = useAppStore()
+  const { currentBookId, books, setPage, toggleFavorite, incrementReadCount, updateBook, nvidiaApiKey, nvidiaImageStyle } = useAppStore()
   const book = books.find((b) => b.id === currentBookId)
 
   const [currentPage, setCurrentPage] = useState(0)
@@ -31,28 +31,42 @@ export default function BookReaderPage() {
     }
   }, [currentPage, book, incrementReadCount])
 
-  // Generate image for current page if not available
+  // Generate image for current page if it hasImage and no imageUrl yet
   useEffect(() => {
     if (!book) return
     const page = book.pages[currentPage]
-    if (!page || page.imageUrl || !page.imageDescription) return
+    if (!page || !page.hasImage || page.imageUrl) return
 
     let cancelled = false
     setLoadingImage(true)
 
     const generateImage = async () => {
       try {
-        const response = await fetch('/api/generate-image', {
+        // Build the image prompt from the page text and/or imageDescription
+        const imagePrompt = page.imageDescription || page.text || `Illustration for page ${currentPage + 1}`
+
+        const requestBody: Record<string, unknown> = {
+          prompt: imagePrompt,
+          style: nvidiaImageStyle,
+        }
+
+        const imgEndpoint = nvidiaApiKey ? '/api/nvidia-image' : '/api/generate-image'
+
+        if (nvidiaApiKey) {
+          requestBody.apiKey = nvidiaApiKey
+        }
+
+        const response = await fetch(imgEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: page.imageDescription }),
+          body: JSON.stringify(requestBody),
         })
         if (!response.ok) throw new Error('Failed')
         const data = await response.json()
         if (data.base64 && !cancelled) {
           const imageUrl = `data:image/png;base64,${data.base64}`
           updateBook(book.id, {
-            pages: book.pages.map((p) =>
+            pages: book.pages.map((p: BookPage) =>
               p.id === page.id ? { ...p, imageUrl } : p
             ),
           })
@@ -70,7 +84,7 @@ export default function BookReaderPage() {
       clearTimeout(timer)
       setLoadingImage(false)
     }
-  }, [currentPage, book, updateBook])
+  }, [currentPage, book, updateBook, nvidiaApiKey, nvidiaImageStyle])
 
   if (!book) {
     return (
@@ -85,6 +99,7 @@ export default function BookReaderPage() {
 
   const page = book.pages[currentPage]
   const isLastPage = currentPage === book.pages.length - 1
+  const pageHasImage = page?.hasImage
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-indigo-50 flex flex-col">
@@ -125,51 +140,75 @@ export default function BookReaderPage() {
             transition={{ duration: 0.3 }}
             className="w-full flex-1 flex flex-col"
           >
-            {/* Illustration area */}
-            <div className="flex-1 min-h-0 mb-4 flex items-center justify-center">
-              {page?.imageUrl ? (
-                <motion.div
-                  className="w-full aspect-square max-h-[50vh] rounded-2xl overflow-hidden shadow-lg"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  <img
-                    src={page.imageUrl}
-                    alt={`Illustration for page ${currentPage + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                </motion.div>
-              ) : (
-                <div className="w-full aspect-square max-h-[50vh] rounded-2xl bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center shadow-sm border border-purple-100">
-                  {loadingImage ? (
-                    <div className="flex flex-col items-center gap-3">
-                      <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-                      <p className="text-sm text-purple-400">Painting illustration...</p>
-                    </div>
+            {pageHasImage ? (
+              /* Page WITH image: show image on top, text below */
+              <>
+                {/* Illustration area */}
+                <div className="flex-1 min-h-0 mb-4 flex items-center justify-center">
+                  {page?.imageUrl ? (
+                    <motion.div
+                      className="w-full aspect-square max-h-[45vh] rounded-2xl overflow-hidden shadow-lg"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      <img
+                        src={page.imageUrl}
+                        alt={`Illustration for page ${currentPage + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </motion.div>
                   ) : (
-                    <div className="text-center p-6">
-                      <span className="text-6xl block mb-3">
-                        {book.coverEmoji || '📖'}
-                      </span>
-                      <p className="text-sm text-purple-300">Illustration for page {currentPage + 1}</p>
+                    <div className="w-full aspect-square max-h-[45vh] rounded-2xl bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center shadow-sm border border-purple-100">
+                      {loadingImage ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                          <p className="text-sm text-purple-400">Painting illustration...</p>
+                        </div>
+                      ) : (
+                        <div className="text-center p-6">
+                          <span className="text-6xl block mb-3">
+                            {book.coverEmoji || '📖'}
+                          </span>
+                          <p className="text-sm text-purple-300">Illustration for page {currentPage + 1}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Text area */}
-            <motion.div
-              className="bg-white rounded-2xl p-6 shadow-sm border border-purple-100"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <p className="text-gray-800 text-lg leading-relaxed font-serif">
-                {page?.text}
-              </p>
-            </motion.div>
+                {/* Text area */}
+                <motion.div
+                  className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  <p className="text-gray-800 text-lg leading-relaxed font-serif">
+                    {page?.text}
+                  </p>
+                </motion.div>
+              </>
+            ) : (
+              /* Page WITHOUT image: full text layout, larger and more readable */
+              <motion.div
+                className="flex-1 flex items-center justify-center"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
+                <div className="bg-white rounded-2xl p-8 shadow-sm border border-purple-100 w-full">
+                  <p className="text-gray-800 text-xl leading-loose font-serif">
+                    {page?.text}
+                  </p>
+                  <div className="mt-4 flex justify-center">
+                    <span className="text-purple-200 text-2xl">
+                      {book.coverEmoji || '✨'}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -191,12 +230,16 @@ export default function BookReaderPage() {
 
           {/* Page dots */}
           <div className="flex items-center gap-1.5 overflow-x-auto max-w-[60vw] px-2">
-            {book.pages.map((_, i) => (
+            {book.pages.map((p, i) => (
               <button
                 key={i}
                 onClick={() => setCurrentPage(i)}
-                className={`w-2 h-2 rounded-full transition-all shrink-0 ${
-                  i === currentPage ? 'bg-purple-500 w-6' : 'bg-purple-200 hover:bg-purple-300'
+                className={`rounded-full transition-all shrink-0 ${
+                  i === currentPage
+                    ? 'bg-purple-500 w-6 h-2'
+                    : p.hasImage
+                      ? 'bg-pink-300 w-2 h-2'
+                      : 'bg-purple-200 w-2 h-2 hover:bg-purple-300'
                 }`}
               />
             ))}

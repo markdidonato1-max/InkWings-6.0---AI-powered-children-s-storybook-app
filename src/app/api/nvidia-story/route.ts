@@ -1,17 +1,12 @@
-import ZAI from 'z-ai-web-dev-sdk'
+// NVIDIA API Story Generation Route
+// Uses NVIDIA's LLM API for creative story generation
 
-// Calculate which pages get images based on imageCount and pageCount
-// Images are placed at the start of each pair of pages (1 image per 2 pages)
-// For imageCount images, image i covers pages (i*2) and (i*2+1)
-// If odd pages and last image covers only 1 page, that's fine
+// Images are placed at the start of each section (1 image per ~2 pages)
 function getImagePositions(pageCount: number, imageCount: number): Set<number> {
   const positions = new Set<number>()
   if (imageCount <= 0 || pageCount <= 0) return positions
 
-  // Place images evenly: each image covers ~2 pages
-  // Image i goes on page (i * pageCount / imageCount), rounded
   for (let i = 0; i < imageCount; i++) {
-    // Position image at the start of its section
     const pos = Math.floor(i * pageCount / imageCount)
     positions.add(Math.min(pos, pageCount - 1))
   }
@@ -20,9 +15,13 @@ function getImagePositions(pageCount: number, imageCount: number): Set<number> {
 
 export async function POST(request: Request) {
   try {
-    const { prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, childName } = await request.json()
+    const { prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, childName, apiKey, model } = await request.json()
 
-    const zai = await ZAI.create()
+    if (!apiKey) {
+      return Response.json({ error: 'NVIDIA API key is required' }, { status: 400 })
+    }
+
+    const selectedModel = model || 'meta/llama-3.3-70b-instruct'
 
     const vocabularyLevel =
       ageRange === '3-5'
@@ -62,27 +61,46 @@ RULES:
 - The story should have a clear beginning, middle, and end
 - If a moral is specified, weave it naturally into the story
 - Return exactly ${pageCount} pages
-- Provide an imageDescription for EVERY page, even though only ${imageCount} images will be generated`
+- Provide an imageDescription for EVERY page, even though only ${imageCount} images will be generated
+- NEVER wrap the JSON in markdown code blocks - return ONLY raw JSON`
 
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Create a ${storyStyle.toLowerCase()} ${genre} story about: ${prompt}. The main character's name is ${childName}.`,
-        },
-      ],
+    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `Create a ${storyStyle.toLowerCase()} ${genre} story about: ${prompt}. The main character's name is ${childName}.`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 4096,
+      }),
     })
 
-    const content = completion.choices[0]?.message?.content || ''
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('NVIDIA API error:', response.status, errorText)
+      return Response.json(
+        { error: `NVIDIA API error: ${response.status}` },
+        { status: response.status }
+      )
+    }
 
-    // Try to parse JSON from the response
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content || ''
+
+    // Parse JSON from response
     try {
-      // First try direct parse
       try {
         const parsed = JSON.parse(content)
         if (parsed.title && parsed.pages) {
-          // Add hasImage field based on imageCount
           const imagePositions = getImagePositions(pageCount, imageCount)
           parsed.pages = parsed.pages.map((p: { pageNumber: number; text: string; imageDescription?: string }, i: number) => ({
             ...p,
@@ -91,10 +109,9 @@ RULES:
           return Response.json(parsed)
         }
       } catch {
-        // Try to extract JSON from markdown code blocks or surrounding text
+        // Try code block extraction
       }
 
-      // Try to extract JSON from markdown code blocks
       const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
       if (codeBlockMatch) {
         const parsed = JSON.parse(codeBlockMatch[1].trim())
@@ -137,10 +154,10 @@ RULES:
         }
       }
     } catch (parseError) {
-      console.error('Failed to parse story JSON:', parseError)
+      console.error('Failed to parse NVIDIA story JSON:', parseError)
     }
 
-    // Fallback response
+    // Fallback
     const imagePositions = getImagePositions(pageCount, imageCount)
     return Response.json({
       title: `${childName}'s ${genre} Adventure`,
@@ -156,9 +173,9 @@ RULES:
       })),
     })
   } catch (error) {
-    console.error('Story generation error:', error)
+    console.error('NVIDIA story generation error:', error)
     return Response.json(
-      { error: 'Failed to generate story. Please try again.' },
+      { error: 'Failed to generate story with NVIDIA API. Please try again.' },
       { status: 500 }
     )
   }

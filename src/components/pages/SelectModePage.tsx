@@ -75,7 +75,7 @@ export default function SelectModePage() {
               <div>
                 <h3 className="text-xl font-bold text-white mb-1">Parent Mode</h3>
                 <p className="text-purple-200/60 text-sm">
-                  Manage accounts, set controls, view reading stats, and approve content. Requires authentication.
+                  Manage accounts, set controls, view reading stats, and approve content. Requires passcode.
                 </p>
               </div>
             </div>

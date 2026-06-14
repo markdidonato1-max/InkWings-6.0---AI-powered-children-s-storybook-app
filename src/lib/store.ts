@@ -10,7 +10,7 @@ export interface ParentAccount {
   name: string
   email: string
   authMethod: 'apple' | 'google' | 'passcode'
-  passcode?: string
+  passcode: string
   children: ChildProfile[]
   subscription: { status: 'active' | 'expired' | 'trial'; expiryDate: string }
   createdAt: string
@@ -50,6 +50,7 @@ export interface BookPage {
   imageUrl?: string
   imageDescription?: string
   imagePosition: 'top' | 'bottom' | 'full'
+  hasImage: boolean
 }
 
 export interface Book {
@@ -67,6 +68,7 @@ export interface Book {
   createdAt: string
   coverGradient?: string
   coverEmoji?: string
+  imageCount: number
 }
 
 export type PageName =
@@ -114,11 +116,17 @@ interface AppState {
     ageRange: '3-5' | '6-8' | '9-12'
     moral: string
     pageCount: number
+    imageCount: number
   } | null
 
   // Admin
   adminApiKey: string
   adminCallLogs: { timestamp: string; prompt: string; response: string; tokens: number }[]
+
+  // NVIDIA API
+  nvidiaApiKey: string
+  nvidiaStoryModel: string
+  nvidiaImageStyle: string
 
   // Actions
   setPage: (page: PageName) => void
@@ -150,6 +158,11 @@ interface AppState {
   setAdminApiKey: (key: string) => void
   addAdminCallLog: (log: { timestamp: string; prompt: string; response: string; tokens: number }) => void
 
+  // NVIDIA
+  setNvidiaApiKey: (key: string) => void
+  setNvidiaStoryModel: (model: string) => void
+  setNvidiaImageStyle: (style: string) => void
+
   // Helpers
   getCurrentChild: () => ChildProfile | null
   getCurrentBook: () => Book | null
@@ -178,6 +191,10 @@ export const useAppStore = create<AppState>()(
 
       adminApiKey: '',
       adminCallLogs: [],
+
+      nvidiaApiKey: '',
+      nvidiaStoryModel: 'meta/llama-3.3-70b-instruct',
+      nvidiaImageStyle: 'watercolor',
 
       // Navigation
       setPage: (page) =>
@@ -283,6 +300,11 @@ export const useAppStore = create<AppState>()(
       addAdminCallLog: (log) =>
         set((state) => ({ adminCallLogs: [...state.adminCallLogs, log] })),
 
+      // NVIDIA
+      setNvidiaApiKey: (key) => set({ nvidiaApiKey: key }),
+      setNvidiaStoryModel: (model) => set({ nvidiaStoryModel: model }),
+      setNvidiaImageStyle: (style) => set({ nvidiaImageStyle: style }),
+
       // Helpers
       getCurrentChild: () => {
         const state = get()
@@ -312,6 +334,9 @@ export const useAppStore = create<AppState>()(
         currentPage: state.currentPage,
         adminApiKey: state.adminApiKey,
         adminCallLogs: state.adminCallLogs,
+        nvidiaApiKey: state.nvidiaApiKey,
+        nvidiaStoryModel: state.nvidiaStoryModel,
+        nvidiaImageStyle: state.nvidiaImageStyle,
       }),
     }
   )

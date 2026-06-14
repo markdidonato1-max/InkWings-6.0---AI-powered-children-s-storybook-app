@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Sparkles, BookOpen, Loader2 } from 'lucide-react'
-import { useAppStore, STORY_STYLES, GENRES, MORALS, AGE_RANGES, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS, type Book } from '@/lib/store'
+import { ChevronLeft, ChevronRight, Sparkles, BookOpen, Image, Loader2 } from 'lucide-react'
+import { useAppStore, STORY_STYLES, GENRES, MORALS, AGE_RANGES, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS, type Book, type BookPage } from '@/lib/store'
 
 const STEPS = [
   'Story Idea',
@@ -11,14 +11,51 @@ const STEPS = [
   'Genre',
   'Reading Level',
   'Moral / Lesson',
-  'Page Count',
+  'Pages & Illustrations',
   'Preview & Create',
 ]
+
+const PAGE_PRESETS = [
+  { label: 'Short', emoji: '📖', pages: 6, images: 3 },
+  { label: 'Medium', emoji: '📚', pages: 10, images: 5 },
+  { label: 'Long', emoji: '📗', pages: 14, images: 7 },
+  { label: 'Epic', emoji: '📕', pages: 20, images: 10 },
+]
+
+// Calculate which pages get images based on imageCount and pageCount
+// Images are placed at the start of each section (1 image per ~2 pages)
+function getImagePositions(pageCount: number, imageCount: number): Set<number> {
+  const positions = new Set<number>()
+  if (imageCount <= 0 || pageCount <= 0) return positions
+
+  for (let i = 0; i < imageCount; i++) {
+    const pos = Math.floor(i * pageCount / imageCount)
+    positions.add(Math.min(pos, pageCount - 1))
+  }
+  return positions
+}
+
+// Get the paired page text for an image at a given position
+// Each image covers the pages from its position to the next image position
+function getPairedPageText(pages: { text: string }[], imagePageIndex: number, pageCount: number, imageCount: number): string {
+  const pagesPerImage = pageCount / imageCount
+  const startPage = Math.floor(imagePageIndex * pagesPerImage)
+  const endPage = Math.min(Math.floor((imagePageIndex + 1) * pagesPerImage) - 1, pages.length - 1)
+
+  let combinedText = ''
+  for (let i = startPage; i <= endPage; i++) {
+    if (pages[i]?.text) {
+      combinedText += pages[i].text + ' '
+    }
+  }
+  return combinedText.trim()
+}
 
 export default function CreateBookPage() {
   const {
     setPage, currentChildId, parentAccount, addBook, setCurrentBookId,
     createBookStep, setCreateBookStep, createBookData, setCreateBookData,
+    nvidiaApiKey, nvidiaStoryModel, nvidiaImageStyle,
   } = useAppStore()
 
   const currentChild = parentAccount?.children.find((c) => c.id === currentChildId)
@@ -29,15 +66,30 @@ export default function CreateBookPage() {
   const [ageRange, setAgeRange] = useState<'3-5' | '6-8' | '9-12'>(createBookData?.ageRange || currentChild?.ageRange || '3-5')
   const [moral, setMoral] = useState(createBookData?.moral || 'none')
   const [pageCount, setPageCount] = useState(createBookData?.pageCount || 6)
+  const [imageCount, setImageCount] = useState(createBookData?.imageCount || 3)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStep, setGenerationStep] = useState('')
+  const [generationProgress, setGenerationProgress] = useState(0)
 
   const step = createBookStep
 
+  // Auto-adjust imageCount when pageCount changes
+  useEffect(() => {
+    const maxImages = Math.min(10, pageCount)
+    if (imageCount > maxImages) {
+      setImageCount(maxImages)
+    }
+    // Default image count follows half the pages
+    const defaultImageCount = Math.ceil(pageCount / 2)
+    if (!createBookData?.imageCount && imageCount !== defaultImageCount) {
+      setImageCount(defaultImageCount)
+    }
+  }, [pageCount])
+
   // Save data whenever step changes
   useEffect(() => {
-    setCreateBookData({ prompt, storyStyle, genre, ageRange, moral, pageCount })
-  }, [prompt, storyStyle, genre, ageRange, moral, pageCount, setCreateBookData])
+    setCreateBookData({ prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount })
+  }, [prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, setCreateBookData])
 
   const canProceed = () => {
     if (step === 0) return prompt.trim() !== ''
@@ -45,7 +97,7 @@ export default function CreateBookPage() {
     if (step === 2) return genre !== ''
     if (step === 3) return true
     if (step === 4) return true
-    if (step === 5) return pageCount >= 4 && pageCount <= 12
+    if (step === 5) return pageCount >= 4 && pageCount <= 20 && imageCount >= 1 && imageCount <= Math.min(10, pageCount)
     return true
   }
 
@@ -64,48 +116,108 @@ export default function CreateBookPage() {
 
   const handleGenerate = async () => {
     setIsGenerating(true)
+    setGenerationProgress(0)
 
     try {
+      // Step 1: Generate story text
       setGenerationStep('Creating your story...')
-      const response = await fetch('/api/generate-story', {
+
+      const requestBody: Record<string, unknown> = {
+        prompt,
+        storyStyle,
+        genre,
+        ageRange,
+        moral,
+        pageCount,
+        imageCount,
+        childName: currentChild?.name || 'Friend',
+      }
+
+      // Use NVIDIA API if key is set, otherwise use default
+      const storyEndpoint = nvidiaApiKey ? '/api/nvidia-story' : '/api/generate-story'
+
+      if (nvidiaApiKey) {
+        requestBody.apiKey = nvidiaApiKey
+        requestBody.model = nvidiaStoryModel
+      }
+
+      const response = await fetch(storyEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          storyStyle,
-          genre,
-          ageRange,
-          moral,
-          pageCount,
-          childName: currentChild?.name || 'Friend',
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) throw new Error('Failed to generate story')
 
       const data = await response.json()
+      setGenerationProgress(30)
 
-      setGenerationStep('Painting illustrations...')
+      // Step 2: Plan illustrations
+      setGenerationStep('Planning illustrations...')
+      await new Promise((r) => setTimeout(r, 500))
+      setGenerationProgress(40)
 
-      // Try to generate first image
-      let firstImageUrl: string | undefined
-      try {
-        if (data.pages?.[0]?.imageDescription) {
-          const imgResponse = await fetch('/api/generate-image', {
+      // Determine image positions
+      const imagePositions = getImagePositions(pageCount, imageCount)
+
+      // Build pages with hasImage
+      const pagesData: BookPage[] = (data.pages || []).map((p: { pageNumber: number; text: string; imageDescription?: string; hasImage?: boolean }, i: number) => ({
+        id: crypto.randomUUID(),
+        pageNumber: p.pageNumber || i + 1,
+        text: p.text || '',
+        imageUrl: undefined,
+        imageDescription: '',
+        imagePosition: 'top' as const,
+        hasImage: imagePositions.has(i),
+      }))
+
+      // Step 3: Generate images for pages that have images
+      let imagesGenerated = 0
+      const totalImages = imageCount
+      const imagePageIndices = Array.from(imagePositions).sort((a, b) => a - b)
+
+      for (const pageIdx of imagePageIndices) {
+        imagesGenerated++
+        setGenerationStep(`Painting image ${imagesGenerated} of ${totalImages}...`)
+        setGenerationProgress(40 + Math.round((imagesGenerated / totalImages) * 50))
+
+        // Combine text of paired pages for image prompt
+        const combinedText = getPairedPageText(pagesData, imagesGenerated - 1, pageCount, imageCount)
+        const imagePrompt = combinedText || data.pages[pageIdx]?.imageDescription || `A colorful watercolor illustration for page ${pageIdx + 1}`
+
+        try {
+          const imgRequestBody: Record<string, unknown> = {
+            prompt: imagePrompt,
+            style: nvidiaImageStyle,
+          }
+
+          const imgEndpoint = nvidiaApiKey ? '/api/nvidia-image' : '/api/generate-image'
+
+          if (nvidiaApiKey) {
+            imgRequestBody.apiKey = nvidiaApiKey
+          }
+
+          const imgResponse = await fetch(imgEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: data.pages[0].imageDescription }),
+            body: JSON.stringify(imgRequestBody),
           })
+
           if (imgResponse.ok) {
             const imgData = await imgResponse.json()
-            firstImageUrl = imgData.base64 ? `data:image/png;base64,${imgData.base64}` : undefined
+            if (imgData.base64) {
+              pagesData[pageIdx].imageUrl = `data:image/png;base64,${imgData.base64}`
+            }
           }
+        } catch {
+          // Image generation failed, continue without it
         }
-      } catch {
-        // Image generation failed, continue without it
       }
 
+      // Step 4: Finishing touches
       setGenerationStep('Adding finishing touches...')
+      setGenerationProgress(95)
+      await new Promise((r) => setTimeout(r, 300))
 
       const gradientIndex = Math.floor(Math.random() * BOOK_COVER_GRADIENTS.length)
       const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
@@ -114,14 +226,7 @@ export default function CreateBookPage() {
         id: crypto.randomUUID(),
         childId: currentChildId!,
         title: data.title || 'My Story',
-        pages: (data.pages || []).map((p: { pageNumber: number; text: string; imageDescription?: string }, i: number) => ({
-          id: crypto.randomUUID(),
-          pageNumber: p.pageNumber || i + 1,
-          text: p.text || '',
-          imageUrl: i === 0 ? firstImageUrl : undefined,
-          imageDescription: p.imageDescription || '',
-          imagePosition: i === 0 ? 'top' : 'top',
-        })),
+        pages: pagesData,
         storyStyle,
         genre,
         moral,
@@ -131,8 +236,10 @@ export default function CreateBookPage() {
         createdAt: new Date().toISOString(),
         coverGradient: BOOK_COVER_GRADIENTS[gradientIndex],
         coverEmoji: BOOK_COVER_EMOJIS[emojiIndex],
+        imageCount,
       }
 
+      setGenerationProgress(100)
       addBook(book)
       setCurrentBookId(book.id)
       setPage('book-reader')
@@ -141,6 +248,7 @@ export default function CreateBookPage() {
       // Create a fallback book
       const gradientIndex = Math.floor(Math.random() * BOOK_COVER_GRADIENTS.length)
       const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
+      const imagePositions = getImagePositions(pageCount, imageCount)
 
       const fallbackBook: Book = {
         id: crypto.randomUUID(),
@@ -156,6 +264,7 @@ export default function CreateBookPage() {
               : `The adventure continued with more exciting discoveries along the way. ${currentChild?.name || 'Our hero'} was having such a wonderful time!`,
           imageDescription: `A colorful illustration of ${currentChild?.name || 'a child'} on page ${i + 1}`,
           imagePosition: 'top' as const,
+          hasImage: imagePositions.has(i),
         })),
         storyStyle,
         genre,
@@ -166,6 +275,7 @@ export default function CreateBookPage() {
         createdAt: new Date().toISOString(),
         coverGradient: BOOK_COVER_GRADIENTS[gradientIndex],
         coverEmoji: BOOK_COVER_EMOJIS[emojiIndex],
+        imageCount,
       }
 
       addBook(fallbackBook)
@@ -174,6 +284,7 @@ export default function CreateBookPage() {
     } finally {
       setIsGenerating(false)
       setGenerationStep('')
+      setGenerationProgress(0)
     }
   }
 
@@ -199,12 +310,28 @@ export default function CreateBookPage() {
           >
             {generationStep}
           </motion.h2>
+          {/* Progress bar */}
+          <div className="w-64 mx-auto mb-4">
+            <div className="h-2 bg-purple-100 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${generationProgress}%` }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">{generationProgress}% complete</p>
+          </div>
           <Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto" />
           <p className="text-gray-400 text-sm mt-4">This may take a moment...</p>
         </motion.div>
       </div>
     )
   }
+
+  const maxImageCount = Math.min(10, pageCount)
+  const imageRatio = pageCount > 0 ? (imageCount / pageCount).toFixed(1) : '0'
+  const pagesPerImage = imageCount > 0 ? Math.round(pageCount / imageCount) : 0
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-indigo-50 flex flex-col">
@@ -404,63 +531,124 @@ export default function CreateBookPage() {
                 </div>
               )}
 
-              {/* Step 5: Page count */}
+              {/* Step 5: Pages & Illustrations */}
               {step === 5 && (
-                <div className="space-y-4">
+                <div className="space-y-5">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-800 mb-1">How many pages?</h2>
-                    <p className="text-gray-500 text-sm">Choose the length of your story (4-12 pages)</p>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-1">Pages & Illustrations</h2>
+                    <p className="text-gray-500 text-sm">Choose the length and how many illustrations to include</p>
                   </div>
-                  <div className="bg-white rounded-2xl p-6 shadow-sm border border-purple-100">
-                    <div className="flex items-center justify-between mb-4">
-                      <button
-                        onClick={() => setPageCount(Math.max(4, pageCount - 1))}
-                        className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 font-bold text-xl hover:bg-purple-100 transition-colors"
-                      >
-                        −
-                      </button>
-                      <div className="text-center">
-                        <p className="text-5xl font-bold text-gray-800">{pageCount}</p>
-                        <p className="text-sm text-gray-400 mt-1">pages</p>
-                      </div>
-                      <button
-                        onClick={() => setPageCount(Math.min(12, pageCount + 1))}
-                        className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 font-bold text-xl hover:bg-purple-100 transition-colors"
-                      >
-                        +
-                      </button>
-                    </div>
 
-                    <div className="grid grid-cols-5 gap-2 mt-4">
-                      {[4, 5, 6, 8, 10, 12].map((count) => (
+                  {/* Quick Presets */}
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-2">Quick presets:</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {PAGE_PRESETS.map((preset) => (
                         <button
-                          key={count}
-                          onClick={() => setPageCount(count)}
-                          className={`py-2 rounded-xl text-sm font-medium transition-all ${
-                            pageCount === count
-                              ? 'bg-indigo-500 text-white'
-                              : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                          key={preset.label}
+                          onClick={() => {
+                            setPageCount(preset.pages)
+                            setImageCount(preset.images)
+                          }}
+                          className={`py-3 px-2 rounded-xl text-center transition-all shadow-sm ${
+                            pageCount === preset.pages && imageCount === preset.images
+                              ? 'bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+                              : 'bg-white border border-purple-100 hover:border-indigo-200'
                           }`}
                         >
-                          {count}
+                          <span className="text-lg block">{preset.emoji}</span>
+                          <p className={`text-sm font-bold mt-1 ${pageCount === preset.pages && imageCount === preset.images ? 'text-white' : 'text-gray-800'}`}>
+                            {preset.label}
+                          </p>
+                          <p className={`text-[10px] ${pageCount === preset.pages && imageCount === preset.images ? 'text-white/80' : 'text-gray-400'}`}>
+                            {preset.pages}p / {preset.images}i
+                          </p>
                         </button>
                       ))}
                     </div>
+                  </div>
 
-                    <p className="text-xs text-gray-400 text-center mt-4">
-                      {pageCount <= 5 ? '📖 Short & sweet story' : pageCount <= 8 ? '📖 Perfect bedtime story' : '📖 Extended adventure'}
+                  {/* Page Count Slider */}
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="w-4 h-4 text-purple-500" />
+                        <span className="font-semibold text-gray-800">Pages</span>
+                      </div>
+                      <span className="text-2xl font-bold text-gray-800">{pageCount}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={4}
+                      max={20}
+                      step={1}
+                      value={pageCount}
+                      onChange={(e) => setPageCount(parseInt(e.target.value))}
+                      className="w-full h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                      style={{ touchAction: 'none' }}
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>4</span>
+                      <span>20</span>
+                    </div>
+                    <p className="text-xs text-gray-400 text-center mt-2">
+                      {pageCount <= 6 ? '📖 Short & sweet story' : pageCount <= 10 ? '📖 Perfect bedtime story' : pageCount <= 14 ? '📖 Extended adventure' : '📖 Epic saga'}
                     </p>
                   </div>
 
-                  {/* Illustration settings */}
+                  {/* Image Count Slider */}
                   <div className="bg-white rounded-2xl p-5 shadow-sm border border-purple-100">
-                    <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-purple-500" />
-                      Illustration Settings
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      AI-generated watercolor illustrations will be created for each page of your story.
-                      The first page illustration will be generated immediately; others will load as you read.
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Image className="w-4 h-4 text-purple-500" />
+                        <span className="font-semibold text-gray-800">Illustrations</span>
+                      </div>
+                      <span className="text-2xl font-bold text-gray-800">{imageCount}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={maxImageCount}
+                      step={1}
+                      value={imageCount}
+                      onChange={(e) => setImageCount(parseInt(e.target.value))}
+                      className="w-full h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                      style={{ touchAction: 'none' }}
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>1</span>
+                      <span>{maxImageCount}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-medium">
+                        1 image every ~{pagesPerImage} pages
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Visual Summary */}
+                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-purple-100">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Preview layout:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from({ length: pageCount }, (_, i) => {
+                        const imagePositions = getImagePositions(pageCount, imageCount)
+                        const hasImg = imagePositions.has(i)
+                        return (
+                          <div
+                            key={i}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-medium ${
+                              hasImg
+                                ? 'bg-gradient-to-br from-pink-200 to-purple-200 text-purple-700 border border-purple-300'
+                                : 'bg-gray-50 text-gray-400 border border-gray-100'
+                            }`}
+                          >
+                            {hasImg ? '🖼️' : i + 1}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-2">
+                      🖼️ = page with illustration &nbsp;|&nbsp; Number = text-only page
                     </p>
                   </div>
                 </div>
@@ -496,18 +684,32 @@ export default function CreateBookPage() {
                         <p className="text-gray-800 mt-1">{MORALS.find((m) => m.value === moral)?.label}</p>
                       </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-medium text-gray-400 uppercase">Pages</p>
-                      <p className="text-gray-800 mt-1">{pageCount} pages with AI illustrations</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-gray-400 uppercase">Pages</p>
+                        <p className="text-gray-800 mt-1">{pageCount} pages</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-gray-400 uppercase">Illustrations</p>
+                        <p className="text-gray-800 mt-1">{imageCount} images ({nvidiaImageStyle} style)</p>
+                      </div>
                     </div>
                   </div>
 
                   <div className="bg-purple-50 rounded-2xl p-4 border border-purple-100">
                     <p className="text-sm text-purple-700">
                       ✨ Your story will be personalized for <strong>{currentChild?.name || 'your child'}</strong> with age-appropriate
-                      content and beautiful watercolor illustrations.
+                      content and {imageCount} beautiful {nvidiaImageStyle} illustrations across {pageCount} pages.
                     </p>
                   </div>
+
+                  {nvidiaApiKey && (
+                    <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+                      <p className="text-sm text-amber-700">
+                        🚀 Using NVIDIA API ({nvidiaStoryModel}) for story generation
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>

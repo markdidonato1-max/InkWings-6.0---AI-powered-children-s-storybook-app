@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Check, UserPlus, Baby, Settings, Shield } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, UserPlus, Baby, Lock, Settings, Shield } from 'lucide-react'
 import { useAppStore, AVATARS, AGE_RANGES, STORY_STYLES, GENRES, MORALS, type ChildProfile } from '@/lib/store'
 
 const STEPS = [
   { label: 'Parent Profile', icon: UserPlus },
+  { label: 'Set Passcode', icon: Lock },
   { label: 'Add Children', icon: Baby },
   { label: 'Preferences', icon: Settings },
   { label: 'COPPA', icon: Shield },
@@ -17,7 +18,15 @@ export default function OnboardingPage() {
 
   const [parentName, setParentName] = useState('')
   const [parentEmail, setParentEmail] = useState('')
-  const [authMethod, setAuthMethod] = useState<'apple' | 'google' | 'passcode'>('google')
+  const [authMethod, setAuthMethod] = useState<'apple' | 'google' | 'passcode'>('passcode')
+
+  // Passcode state
+  const [passcodeEntry, setPasscodeEntry] = useState('')
+  const [passcodeConfirm, setPasscodeConfirm] = useState('')
+  const [passcodePhase, setPasscodePhase] = useState<'create' | 'confirm'>('create')
+  const [passcodeShakeKey, setPasscodeShakeKey] = useState(0)
+  const [passcodeError, setPasscodeError] = useState('')
+  const [confirmedPasscode, setConfirmedPasscode] = useState('')
 
   const [children, setChildren] = useState<Partial<ChildProfile>[]>([
     { name: '', ageRange: '3-5', avatar: '🦊', preferences: { favoriteGenres: [], favoriteStyles: [], preferredMoral: 'none' } },
@@ -33,14 +42,15 @@ export default function OnboardingPage() {
 
   const canProceed = () => {
     if (step === 0) return parentName.trim() !== '' && parentEmail.trim() !== ''
-    if (step === 1) return children.some((c) => c.name?.trim() !== '')
-    if (step === 2) return true
-    if (step === 3) return coppaAgreed
+    if (step === 1) return confirmedPasscode.length === 4
+    if (step === 2) return children.some((c) => c.name?.trim() !== '')
+    if (step === 3) return true
+    if (step === 4) return coppaAgreed
     return false
   }
 
   const handleNext = () => {
-    if (step < 3) {
+    if (step < 4) {
       setOnboardingStep(step + 1)
     } else {
       // Complete onboarding
@@ -63,6 +73,7 @@ export default function OnboardingPage() {
         name: parentName,
         email: parentEmail,
         authMethod,
+        passcode: confirmedPasscode,
         children: validChildren,
         subscription: { status: 'trial' as const, expiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() },
         createdAt: new Date().toISOString(),
@@ -99,6 +110,53 @@ export default function OnboardingPage() {
     if (children.length <= 1) return
     setChildren(children.filter((_, i) => i !== index))
   }
+
+  // Passcode numpad handler
+  const handlePasscodeDigit = (digit: string) => {
+    setPasscodeError('')
+    if (passcodePhase === 'create') {
+      if (passcodeEntry.length >= 4) return
+      const newPasscode = passcodeEntry + digit
+      setPasscodeEntry(newPasscode)
+      if (newPasscode.length === 4) {
+        // Move to confirm phase
+        setTimeout(() => {
+          setPasscodePhase('confirm')
+        }, 300)
+      }
+    } else {
+      if (passcodeConfirm.length >= 4) return
+      const newConfirm = passcodeConfirm + digit
+      setPasscodeConfirm(newConfirm)
+      if (newConfirm.length === 4) {
+        // Check if they match
+        if (newConfirm === passcodeEntry) {
+          setConfirmedPasscode(newConfirm)
+        } else {
+          // Shake and reset
+          setPasscodeError('Passcodes don\'t match. Try again.')
+          setPasscodeShakeKey((k) => k + 1)
+          setTimeout(() => {
+            setPasscodeEntry('')
+            setPasscodeConfirm('')
+            setPasscodePhase('create')
+            setPasscodeError('')
+          }, 800)
+        }
+      }
+    }
+  }
+
+  const handlePasscodeDelete = () => {
+    setPasscodeError('')
+    if (passcodePhase === 'confirm') {
+      setPasscodeConfirm(passcodeConfirm.slice(0, -1))
+    } else {
+      setPasscodeEntry(passcodeEntry.slice(0, -1))
+    }
+  }
+
+  const currentPasscodeValue = passcodePhase === 'create' ? passcodeEntry : passcodeConfirm
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950 flex flex-col p-6 relative overflow-hidden">
@@ -184,30 +242,107 @@ export default function OnboardingPage() {
                       className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all"
                     />
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-purple-200 mb-2 block">Sign-in Method</label>
-                    <div className="flex gap-3">
-                      {(['apple', 'google', 'passcode'] as const).map((method) => (
-                        <button
-                          key={method}
-                          onClick={() => setAuthMethod(method)}
-                          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                            authMethod === method
-                              ? 'bg-indigo-500 text-white'
-                              : 'bg-white/5 border border-white/10 text-white/60 hover:text-white'
-                          }`}
-                        >
-                          {method === 'apple' ? '🍎 Apple' : method === 'google' ? '🔵 Google' : '🔢 Passcode'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
 
-            {/* Step 1: Add Children */}
+            {/* Step 1: Set Passcode */}
             {step === 1 && (
+              <div className="space-y-6 flex flex-col items-center">
+                <div className="text-center">
+                  <motion.div
+                    className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/30"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                  >
+                    <Lock className="w-8 h-8 text-white" />
+                  </motion.div>
+                  <h2 className="text-2xl font-bold text-white mb-2">
+                    {passcodePhase === 'create' ? 'Create a passcode' : 'Confirm your passcode'}
+                  </h2>
+                  <p className="text-purple-200/70 text-sm">
+                    {passcodePhase === 'create'
+                      ? 'This will protect parent mode access'
+                      : 'Enter the passcode again to confirm'}
+                  </p>
+                </div>
+
+                {/* Digit circles */}
+                <motion.div
+                  key={passcodeShakeKey}
+                  className="flex justify-center gap-5 my-4"
+                  animate={passcodeError ? { x: [0, -12, 12, -12, 12, 0] } : {}}
+                  transition={{ duration: 0.5 }}
+                >
+                  {[0, 1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 ${
+                        i < currentPasscodeValue.length
+                          ? 'bg-indigo-500 border-2 border-indigo-400 shadow-lg shadow-indigo-500/30'
+                          : 'bg-white/5 border-2 border-white/20'
+                      }`}
+                    >
+                      {i < currentPasscodeValue.length && (
+                        <motion.div
+                          className="w-5 h-5 rounded-full bg-white"
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: 'spring', stiffness: 500 }}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </motion.div>
+
+                {passcodeError && (
+                  <motion.p
+                    className="text-red-400 text-sm text-center"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    {passcodeError}
+                  </motion.p>
+                )}
+
+                {confirmedPasscode && (
+                  <motion.div
+                    className="flex items-center gap-2 text-green-400 text-sm"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <Check className="w-4 h-4" />
+                    Passcode set successfully
+                  </motion.div>
+                )}
+
+                {/* Numpad */}
+                <div className="grid grid-cols-3 gap-3 max-w-[300px] mx-auto mt-2">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => (
+                    <button
+                      key={key || 'empty'}
+                      onClick={() => {
+                        if (key === 'del') handlePasscodeDelete()
+                        else if (key) handlePasscodeDigit(key)
+                      }}
+                      disabled={key === '' || !!confirmedPasscode}
+                      className={`h-16 rounded-2xl text-2xl font-semibold transition-all ${
+                        key === ''
+                          ? 'invisible'
+                          : key === 'del'
+                            ? 'bg-white/5 text-white/60 hover:bg-white/10 active:scale-95'
+                            : 'bg-white/10 text-white hover:bg-white/20 active:scale-95 active:bg-white/15'
+                      } ${confirmedPasscode ? 'opacity-50' : ''}`}
+                    >
+                      {key === 'del' ? '⌫' : key}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Add Children */}
+            {step === 2 && (
               <div className="space-y-6">
                 <div>
                   <h2 className="text-2xl font-bold text-white mb-2">Add your children</h2>
@@ -297,8 +432,8 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* Step 2: Preferences */}
-            {step === 2 && (
+            {/* Step 3: Preferences */}
+            {step === 3 && (
               <div className="space-y-6">
                 <div>
                   <h2 className="text-2xl font-bold text-white mb-2">Default preferences</h2>
@@ -372,8 +507,8 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* Step 3: COPPA */}
-            {step === 3 && (
+            {/* Step 4: COPPA */}
+            {step === 4 && (
               <div className="space-y-6">
                 <div>
                   <h2 className="text-2xl font-bold text-white mb-2">COPPA Compliance</h2>
@@ -450,7 +585,7 @@ export default function OnboardingPage() {
                 : 'bg-white/10 text-white/30 cursor-not-allowed'
             }`}
           >
-            {step === 3 ? 'Get Started' : 'Continue'}
+            {step === 4 ? 'Get Started' : 'Continue'}
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

@@ -18,12 +18,38 @@ Work Log:
 - Fixed COPPA checkbox bug (label propagation issue)
 - Fixed invalid Lucide icon imports (ArrowRightRight, SwitchCamera)
 - Improved JSON parsing in story generation API to handle single-quote issues
-- Verified complete user flow through browser testing: Welcome → Onboarding → Child Home → Create Book → Book Reader → Parent Dashboard → Settings
+- Verified complete user flow through browser testing
 
 Stage Summary:
 - Full app recreated with all original functionality
-- 13 page components working: Welcome, Onboarding, ParentAuth, SelectChild, SelectMode, ChildHome, CreateBook, BookReader, MyBooks, ParentDashboard, Settings, Legal, AdminPanel
+- 13 page components working
 - AI story generation working via z-ai-web-dev-sdk
-- AI image generation working per page
 - All data stored locally with Zustand + localStorage persistence
-- Complete COPPA compliance and parental controls implemented
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Major feature updates per user feedback
+
+Work Log:
+- Added passcode setup step in onboarding (iOS-style create + confirm flow)
+- Made passcode required when switching from child to parent mode
+- Removed Apple/Google sign-in from ParentAuthPage (now passcode-only)
+- Updated CreateBookPage with separate page/image sliders (4-20 pages, 1-10 images)
+- Added quick presets: Short (6p/3i), Medium (10p/5i), Long (14p/7i), Epic (20p/10i)
+- Implemented paired-page image generation: 1 image per 2 pages, prompt from combined page text
+- Updated BookReaderPage: text-only pages get larger readable format, image pages show illustration
+- Added NVIDIA API integration routes (/api/nvidia-story, /api/nvidia-image)
+- Added model selection: Llama 3.3 70B (recommended), Kimi K2.6, GLM-4
+- Added image style selection: watercolor, anime, mythical, cartoon, realistic
+- Updated AdminPanel with NVIDIA API key, model/style selectors, test buttons
+- Fixed image position distribution to use floor(i * pageCount / imageCount)
+- Added per-image progress indicator during generation
+- Store updated with nvidiaApiKey, nvidiaStoryModel, nvidiaImageStyle fields
+
+Stage Summary:
+- Passcode setup + verification fully working
+- Pages & Illustrations step with separate sliders working
+- Paired-page image generation logic implemented
+- NVIDIA API integration ready (falls back to z-ai-web-dev-sdk without key)
+- All browser-verified and working
