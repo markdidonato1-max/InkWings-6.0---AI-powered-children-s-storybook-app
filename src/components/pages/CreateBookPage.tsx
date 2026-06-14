@@ -252,11 +252,15 @@ export default function CreateBookPage() {
             style: nvidiaImageStyle,
           }
 
-          const imgEndpoint = nvidiaApiKey ? '/api/nvidia-image' : '/api/generate-image'
+          // Always use nvidia-image route which has ZAI SDK fallback
+          const imgEndpoint = '/api/nvidia-image'
 
           if (nvidiaApiKey) {
             imgRequestBody.apiKey = nvidiaApiKey
-            imgRequestBody.model = nvidiaImageModel
+            // Only send model if it's an image model (not a text model)
+            if (nvidiaImageModel && nvidiaImageModel !== 'nvidia/nemotron-3-ultra-550b-a55b') {
+              imgRequestBody.model = nvidiaImageModel
+            }
           }
 
           // Pass the drawing photo as reference for image-to-image generation
@@ -275,9 +279,12 @@ export default function CreateBookPage() {
             if (imgData.base64) {
               pagesData[pageIdx].imageUrl = `data:image/png;base64,${imgData.base64}`
             }
+          } else {
+            const errText = await imgResponse.text()
+            console.error(`Image gen failed for page ${pageIdx + 1}:`, imgResponse.status, errText.substring(0, 200))
           }
-        } catch {
-          // Image generation failed, continue without it
+        } catch (imgErr) {
+          console.error(`Image gen error for page ${pageIdx + 1}:`, imgErr)
         }
       }
 

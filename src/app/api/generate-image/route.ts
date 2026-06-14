@@ -17,9 +17,14 @@ export async function POST(request: Request) {
     // If a reference image (child's drawing) is provided, enhance the prompt
     let fullPrompt: string
     if (referenceImage) {
-      fullPrompt = `Transform this child's drawing into a professional ${stylePrompt}: ${prompt}. Maintain the core composition and subject matter from the original drawing while applying the ${style || 'watercolor'} artistic style. Keep it whimsical and child-friendly.`
+      fullPrompt = `${stylePrompt}, inspired by a child's drawing: ${prompt}. Maintain a whimsical, child-friendly feeling. Keep the core subjects and composition described.`
     } else {
       fullPrompt = `${stylePrompt}: ${prompt}`
+    }
+
+    // Keep prompt within limits
+    if (fullPrompt.length > 2000) {
+      fullPrompt = fullPrompt.substring(0, 2000)
     }
 
     const zai = await ZAI.create()
@@ -32,12 +37,14 @@ export async function POST(request: Request) {
     const base64 = response.data[0]?.base64
 
     if (!base64) {
+      console.error('[generate-image] No base64 in response')
       return Response.json({ error: 'No image generated' }, { status: 500 })
     }
 
+    console.log(`[generate-image] Success via ZAI SDK (length: ${base64.length})`)
     return Response.json({ base64 })
   } catch (error) {
-    console.error('Image generation error:', error)
+    console.error('[generate-image] Error:', error)
     return Response.json(
       { error: 'Failed to generate image. Please try again.' },
       { status: 500 }

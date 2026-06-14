@@ -118,3 +118,32 @@ Stage Summary:
 - Story API route supports Nemotron reasoning parameters
 - Image generation uses same API key for SDXL / image-to-image
 - All changes compile and build successfully
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Fix image generation not working + age-appropriate word counts per page
+
+Work Log:
+- Discovered NVIDIA API key only has chat/text models (no image generation models)
+- Image generation endpoint /v1/images/generations returns 404 with this key
+- Restructured nvidia-image route: ZAI SDK is now primary for image generation
+- NVIDIA API image call only attempted if a valid image model is explicitly set
+- Skips NVIDIA image call if model is a text model (nemotron, llama, kimi, glm)
+- Added 45s timeout on NVIDIA image API calls to prevent blocking
+- Added detailed error logging throughout all image generation routes
+- Fixed age-appropriate word counts in story generation prompts:
+  - Ages 3-5: 15-25 words per page, 1-2 very short sentences
+  - Ages 6-8: 30-50 words per page, 2-3 medium sentences
+  - Ages 9-12: 50-80 words per page, 3-5 longer sentences
+- Added concrete examples for each age range in the AI prompt
+- Updated both nvidia-story and generate-story routes with age specs
+- Added age-appropriate fallback story texts for each range
+- Updated CreateBookPage and BookReaderPage to use /api/nvidia-image with ZAI fallback
+- Build verified: no errors
+
+Stage Summary:
+- Image generation now uses ZAI SDK as primary (NVIDIA API key lacks image models)
+- Age-appropriate word counts enforced in AI story generation prompts
+- Better error logging and faster fallback on image generation failures
+- All changes compile and build successfully

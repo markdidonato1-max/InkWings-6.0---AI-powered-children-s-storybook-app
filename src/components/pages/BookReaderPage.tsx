@@ -72,11 +72,15 @@ export default function BookReaderPage() {
           style: nvidiaImageStyle,
         }
 
-        const imgEndpoint = nvidiaApiKey ? '/api/nvidia-image' : '/api/generate-image'
+        // Always use nvidia-image route which has ZAI SDK fallback
+        const imgEndpoint = '/api/nvidia-image'
 
         if (nvidiaApiKey) {
           requestBody.apiKey = nvidiaApiKey
-          requestBody.model = nvidiaImageModel
+          // Only send model if it's an image model (not a text model like Nemotron)
+          if (nvidiaImageModel && nvidiaImageModel !== 'nvidia/nemotron-3-ultra-550b-a55b') {
+            requestBody.model = nvidiaImageModel
+          }
         }
 
         const response = await fetch(imgEndpoint, {
@@ -84,7 +88,11 @@ export default function BookReaderPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
         })
-        if (!response.ok) throw new Error('Failed')
+        if (!response.ok) {
+          const errText = await response.text()
+          console.error(`[BookReader] Image gen failed for page ${currentPage + 1}:`, response.status, errText.substring(0, 200))
+          throw new Error('Failed')
+        }
         const data = await response.json()
         if (data.base64 && !cancelled) {
           const imageUrl = `data:image/png;base64,${data.base64}`
@@ -94,8 +102,8 @@ export default function BookReaderPage() {
             ),
           })
         }
-      } catch {
-        // Silently fail - just don't show image
+      } catch (err) {
+        console.error(`[BookReader] Image gen error for page ${currentPage + 1}:`, err)
       } finally {
         if (!cancelled) setLoadingImage(false)
       }
