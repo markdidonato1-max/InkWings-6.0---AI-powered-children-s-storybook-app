@@ -195,7 +195,7 @@ export const useAppStore = create<AppState>()(
       adminApiKey: '',
       adminCallLogs: [],
 
-      nvidiaApiKey: '',
+      nvidiaApiKey: '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',
       nvidiaStoryModel: 'nvidia/nemotron-3-ultra-550b-a55b',
       nvidiaImageStyle: 'watercolor',
       nvidiaImageModel: '', // No default — NVIDIA image models require separate subscription
