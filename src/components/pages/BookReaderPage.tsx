@@ -5,6 +5,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, X, Heart, Loader2 } from 'lucide-react'
 import { useAppStore, type BookPage } from '@/lib/store'
 
+// Fix MIME type for base64 images — ZAI SDK returns JPEG but old code used PNG prefix
+function fixImageUrl(url: string | undefined): string | undefined {
+  if (!url) return url
+  // If URL has wrong PNG prefix but data is actually JPEG, fix it
+  if (url.startsWith('data:image/png;base64,/9j/')) {
+    return url.replace('data:image/png;base64,', 'data:image/jpeg;base64,')
+  }
+  return url
+}
+
 // Get the text of the pages surrounding an image for the prompt
 // Image i covers pages (2i) and (2i+1). If odd pages, last image covers 1 page.
 function getImagePromptText(pages: { text: string }[], currentPageIndex: number, totalImageCount: number): string {
@@ -95,7 +105,9 @@ export default function BookReaderPage() {
         }
         const data = await response.json()
         if (data.base64 && !cancelled) {
-          const imageUrl = `data:image/png;base64,${data.base64}`
+          // Detect image format from base64 header — ZAI SDK returns JPEG, NVIDIA may return PNG
+          const isJpeg = data.base64.startsWith('/9j/')
+          const imageUrl = `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${data.base64}`
           updateBook(book.id, {
             pages: book.pages.map((p: BookPage) =>
               p.id === page.id ? { ...p, imageUrl } : p
@@ -184,7 +196,7 @@ export default function BookReaderPage() {
                       transition={{ delay: 0.2 }}
                     >
                       <img
-                        src={page.imageUrl}
+                        src={fixImageUrl(page.imageUrl)}
                         alt={`Illustration for page ${currentPage + 1}`}
                         className="w-full h-full object-cover"
                       />

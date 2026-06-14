@@ -173,3 +173,24 @@ Stage Summary:
 - Word counts per page now align with published children's book industry standards
 - All 4 files modified: nvidia-image/route.ts, nvidia-story/route.ts, generate-story/route.ts, CreateBookPage.tsx, store.ts
 - Server running on port 3000
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix illustrations not rendering - showing skull and crossbones instead of images
+
+Work Log:
+- Tested ZAI SDK image generation directly — confirmed it returns valid JPEG base64 data (starts with /9j/)
+- Discovered root cause: code was using `data:image/png;base64,` prefix but ZAI SDK returns JPEG images
+- Browser can't decode JPEG data with a PNG MIME type → shows broken image icon (skull and crossbones)
+- Fixed CreateBookPage.tsx: detect image format from base64 header and use correct MIME type
+- Fixed BookReaderPage.tsx: same fix for new images + added `fixImageUrl()` helper for existing stored images
+- Drawing photos (from canvas.toDataURL) are genuinely PNG — no change needed
+- Verified API route works (takes ~30s but returns valid data)
+- Rebuilt and restarted server
+
+Stage Summary:
+- Root cause: MIME type mismatch (JPEG data labeled as PNG)
+- Fixed in: CreateBookPage.tsx, BookReaderPage.tsx
+- Added backward compatibility via fixImageUrl() for any existing books in localStorage
+- Server running on port 3000

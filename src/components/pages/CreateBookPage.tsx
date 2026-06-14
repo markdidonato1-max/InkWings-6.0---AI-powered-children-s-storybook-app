@@ -277,7 +277,9 @@ export default function CreateBookPage() {
           if (imgResponse.ok) {
             const imgData = await imgResponse.json()
             if (imgData.base64) {
-              pagesData[pageIdx].imageUrl = `data:image/png;base64,${imgData.base64}`
+              // Detect image format from base64 header — ZAI SDK returns JPEG, NVIDIA may return PNG
+              const isJpeg = imgData.base64.startsWith('/9j/')
+              pagesData[pageIdx].imageUrl = `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${imgData.base64}`
             }
           } else {
             const errText = await imgResponse.text()
