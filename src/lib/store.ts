@@ -195,8 +195,8 @@ export const useAppStore = create<AppState>()(
       adminApiKey: '',
       adminCallLogs: [],
 
-      nvidiaApiKey: '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',
-      nvidiaStoryModel: 'nvidia/nemotron-3-ultra-550b-a55b',
+      nvidiaApiKey: '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',
+      nvidiaStoryModel: 'qwen/qwen3.5-122b-a10b',
       nvidiaImageStyle: 'watercolor',
       nvidiaImageModel: '', // No default — NVIDIA image models require separate subscription
 
@@ -356,6 +356,14 @@ export const useAppStore = create<AppState>()(
         // and returning 404 wastes 5-10 seconds on every image generation attempt
         if (merged.nvidiaImageModel === 'stabilityai/stable-diffusion-xl') {
           merged.nvidiaImageModel = ''
+        }
+        // Migrate old Nemotron model to Qwen 3.5 (faster, better structured output)
+        if (merged.nvidiaStoryModel === 'nvidia/nemotron-3-ultra-550b-a55b') {
+          merged.nvidiaStoryModel = 'qwen/qwen3.5-122b-a10b'
+        }
+        // Migrate old/expired API keys to the current one
+        if (merged.nvidiaApiKey === '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') {
+          merged.nvidiaApiKey = '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'
         }
         // Fix any existing book images with wrong MIME type (JPEG data labeled as PNG)
         if (Array.isArray(merged.books)) {

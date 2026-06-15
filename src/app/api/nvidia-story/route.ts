@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'NVIDIA API key is required' }, { status: 400 })
     }
 
-    const selectedModel = model || 'nvidia/nemotron-3-ultra-550b-a55b'
+    const selectedModel = model || 'qwen/qwen3.5-122b-a10b'
 
     // Age-appropriate word count and vocabulary specifications
     // Based on industry standards for children's books:
@@ -103,7 +103,7 @@ CRITICAL RULES:
 - Provide an imageDescription for EVERY page
 - NEVER wrap the JSON in markdown code blocks - return ONLY raw JSON`
 
-    // Build request body - Nemotron supports reasoning_effort and reasoning_budget
+    // Build request body with model-appropriate parameters
     const requestBody: Record<string, unknown> = {
       model: selectedModel,
       messages: [
@@ -113,16 +113,27 @@ CRITICAL RULES:
           content: `Create a ${storyStyle.toLowerCase()} ${genre} story about: ${prompt}. The main character's name is ${childName}. Remember: each page MUST have ${spec.wordsPerPage}. This is for ${ageRange} year olds.`,
         },
       ],
-      temperature: 0.8,
-      top_p: 0.95,
       max_tokens: 16384,
-      stream: false, // We need the full response at once for JSON parsing
     }
 
-    // Add Nemotron-specific reasoning parameters if using a Nemotron model
-    if (selectedModel.includes('nemotron')) {
+    // Model-specific parameters
+    if (selectedModel.includes('qwen')) {
+      // Qwen 3.5 works best with lower temperature for structured output
+      // NOTE: Qwen does NOT support the "stream" parameter — it causes a 500 error
+      requestBody.temperature = 0.6
+      requestBody.top_p = 0.95
+    } else if (selectedModel.includes('nemotron')) {
+      // Nemotron supports reasoning parameters and streaming config
+      requestBody.temperature = 0.8
+      requestBody.top_p = 0.95
+      requestBody.stream = false
       requestBody.reasoning_effort = 'high'
       requestBody.reasoning_budget = 16384
+    } else {
+      // Default parameters for other models
+      requestBody.temperature = 0.8
+      requestBody.top_p = 0.95
+      requestBody.stream = false
     }
 
     console.log(`[nvidia-story] Generating story with model: ${selectedModel}, age: ${ageRange}, pages: ${pageCount}`)
@@ -148,13 +159,19 @@ CRITICAL RULES:
 
     const data = await response.json()
 
-    // For Nemotron, the content might include reasoning tokens in <think> tags
+    // Extract content from response — some models include <think> tags (Nemotron, Qwen reasoning)
     let content = data.choices?.[0]?.message?.content || ''
 
-    // Strip <think> tags from Nemotron reasoning output
+    // Strip <think> tags from reasoning models (Nemotron, Qwen with thinking enabled)
     const thinkMatch = content.match(/<\/think>\s*([\s\S]*)/)
     if (thinkMatch) {
       content = thinkMatch[1].trim()
+    }
+
+    // Qwen 3.5 may wrap output in markdown code blocks
+    const codeBlockOnly = content.match(/^\s*```(?:json)?\s*([\s\S]*?)```\s*$/)
+    if (codeBlockOnly) {
+      content = codeBlockOnly[1].trim()
     }
 
     console.log(`[nvidia-story] Response length: ${content.length} chars`)
