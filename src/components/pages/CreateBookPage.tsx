@@ -219,13 +219,13 @@ export default function CreateBookPage() {
       // Determine image positions
       const imagePositions = getImagePositions(pageCount, imageCount)
 
-      // Build pages with hasImage
+      // Build pages with hasImage — preserve imageDescription from the API for illustration prompts
       const pagesData: BookPage[] = (data.pages || []).map((p: { pageNumber: number; text: string; imageDescription?: string; hasImage?: boolean }, i: number) => ({
         id: crypto.randomUUID(),
         pageNumber: p.pageNumber || i + 1,
         text: p.text || '',
         imageUrl: undefined,
-        imageDescription: '',
+        imageDescription: p.imageDescription || '',
         imagePosition: 'top' as const,
         hasImage: imagePositions.has(i),
       }))
@@ -240,11 +240,14 @@ export default function CreateBookPage() {
         setGenerationStep(`Painting image ${imagesGenerated} of ${totalImages}...`)
         setGenerationProgress(40 + Math.round((imagesGenerated / totalImages) * 50))
 
-        // Use the text of the 2 pages this image covers as the prompt
-        // Image i covers pages (2i) and (2i+1); if odd pages, last image covers 1 page
+        // Build the best possible image prompt:
+        // 1) Use the dedicated imageDescription from the story API (designed specifically for illustration)
+        // 2) Fall back to combining the text of the pages this image covers
+        // 3) Last resort: generic prompt
         const imageIndex = imagesGenerated - 1
         const combinedText = getImagePromptText(pagesData, imageIndex)
-        const imagePrompt = combinedText || data.pages[pageIdx]?.imageDescription || `A colorful watercolor illustration for page ${pageIdx + 1}`
+        const imageDescription = pagesData[pageIdx]?.imageDescription || data.pages[pageIdx]?.imageDescription
+        const imagePrompt = imageDescription || combinedText || `A colorful watercolor illustration for page ${pageIdx + 1}`
 
         try {
           const imgRequestBody: Record<string, unknown> = {

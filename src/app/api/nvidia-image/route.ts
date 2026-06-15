@@ -23,8 +23,9 @@ export async function POST(request: Request) {
     // Build the full prompt with style and reference drawing context
     let fullPrompt: string
     if (referenceImage) {
-      // When a child's drawing is provided, enhance the prompt to incorporate it
-      fullPrompt = `${stylePrompt}, inspired by a child's drawing: ${prompt}. Maintain a whimsical, child-friendly feeling. Keep the core subjects and composition described.`
+      // When a child's drawing is provided, enhance the prompt to incorporate the drawing's style
+      // ZAI SDK doesn't support image-to-image natively, so we describe the drawing influence in text
+      fullPrompt = `${stylePrompt}, inspired by a child's drawing with playful and imaginative style: ${prompt}. Maintain a whimsical, child-friendly feeling that captures the spirit of a child's artwork. Keep the core subjects and composition described. Use bright, cheerful colors and simple, expressive shapes.`
     } else {
       fullPrompt = `${stylePrompt}: ${prompt}`
     }

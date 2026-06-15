@@ -74,10 +74,12 @@ export default function BookReaderPage() {
 
     const generateImage = async () => {
       try {
-        // Build the image prompt from the text of the surrounding pages
-        // Image i covers pages (2i) and (2i+1); if odd pages, last covers 1
+        // Build the best possible image prompt:
+        // 1) Use the dedicated imageDescription from the story API (designed specifically for illustration)
+        // 2) Fall back to combining the text of the pages this image covers
+        // 3) Last resort: the page text or a generic prompt
         const surroundingText = getImagePromptText(book.pages, currentPage, book.imageCount)
-        const imagePrompt = surroundingText || page.imageDescription || page.text || `Illustration for page ${currentPage + 1}`
+        const imagePrompt = page.imageDescription || surroundingText || page.text || `Illustration for page ${currentPage + 1}`
 
         const requestBody: Record<string, unknown> = {
           prompt: imagePrompt,
