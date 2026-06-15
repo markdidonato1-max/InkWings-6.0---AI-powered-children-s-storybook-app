@@ -157,7 +157,6 @@ CRITICAL RULES:
         } catch {
           // Try fixing common JSON issues
           let jsonStr = jsonMatch[0]
-            .replace(/'/g, '"')
             .replace(/(\w+)\s*:/g, '"$1":')
             .replace(/:\s*"([^"]*?)"\s*([,}\]])/g, ': "$1"$2')
           try {

@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, X, Heart, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Heart, Home, Loader2 } from 'lucide-react'
 import { useAppStore, type BookPage } from '@/lib/store'
 
 // Fix MIME type for base64 images — ZAI SDK returns JPEG but old code used PNG prefix
@@ -41,6 +41,7 @@ export default function BookReaderPage() {
 
   const [currentPage, setCurrentPage] = useState(0)
   const [loadingImage, setLoadingImage] = useState(false)
+  const hasCountedRead = useRef(false)
 
   const goNext = useCallback(() => {
     if (book && currentPage < book.pages.length - 1) {
@@ -54,9 +55,10 @@ export default function BookReaderPage() {
     }
   }, [currentPage])
 
-  // Track reading on first page view and last page
+  // Track reading when reaching the last page — only once per session
   useEffect(() => {
-    if (book && currentPage === book.pages.length - 1) {
+    if (book && currentPage === book.pages.length - 1 && !hasCountedRead.current) {
+      hasCountedRead.current = true
       incrementReadCount(book.id)
     }
   }, [currentPage, book, incrementReadCount])
@@ -295,7 +297,7 @@ export default function BookReaderPage() {
                 : 'bg-purple-100 text-purple-600 hover:bg-purple-200 active:scale-95'
             }`}
           >
-            {isLastPage ? <X className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+            {isLastPage ? <Home className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
           </button>
         </div>
       </div>

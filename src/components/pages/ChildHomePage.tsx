@@ -5,7 +5,7 @@ import { BookOpen, ArrowRight, Repeat, Plus, Home, Settings, Sparkles, BookMarke
 import { useAppStore, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS } from '@/lib/store'
 
 export default function ChildHomePage() {
-  const { parentAccount, currentChildId, books, setPage, setCurrentChildId } = useAppStore()
+  const { parentAccount, currentChildId, books, setPage, setCurrentChildId, currentPage } = useAppStore()
 
   const currentChild = parentAccount?.children.find((c) => c.id === currentChildId)
   const childBooks = books.filter((b) => b.childId === currentChildId)
@@ -223,10 +223,10 @@ export default function ChildHomePage() {
       <div className="bg-white/90 backdrop-blur-sm border-t border-purple-100 px-4 py-2 safe-area-bottom">
         <div className="max-w-lg mx-auto flex items-center justify-around">
           {[
-            { icon: Home, label: 'Home', page: 'child-home' as const, active: true },
-            { icon: BookMarked, label: 'My Books', page: 'my-books' as const, active: false },
-            { icon: Plus, label: 'Create', page: 'create-book' as const, active: false },
-            { icon: Settings, label: 'Settings', page: 'settings' as const, active: false },
+            { icon: Home, label: 'Home', page: 'child-home' as const },
+            { icon: BookMarked, label: 'My Books', page: 'my-books' as const },
+            { icon: Plus, label: 'Create', page: 'create-book' as const },
+            { icon: Settings, label: 'Settings', page: 'settings' as const },
           ].map((item) => (
             <button
               key={item.label}
@@ -238,7 +238,7 @@ export default function ChildHomePage() {
                 setPage(item.page)
               }}
               className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition-colors ${
-                item.active ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
+                currentPage === item.page ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
               }`}
             >
               <item.icon className="w-5 h-5" />

@@ -8,7 +8,13 @@ export default function LegalPage() {
   const { setPage, legalPageType, mode } = useAppStore()
 
   const handleBack = () => {
-    setPage(mode === 'parent' ? 'parent-dashboard' : 'settings')
+    if (mode === 'parent') {
+      setPage('parent-dashboard')
+    } else if (mode === 'child') {
+      setPage('settings')
+    } else {
+      setPage('welcome')
+    }
   }
 
   return (

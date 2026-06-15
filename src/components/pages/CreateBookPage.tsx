@@ -317,6 +317,8 @@ export default function CreateBookPage() {
       setGenerationProgress(100)
       addBook(book)
       setCurrentBookId(book.id)
+      setCreateBookStep(0)
+      setCreateBookData(null)
       setPage('book-reader')
     } catch (error) {
       console.error('Generation error:', error)
@@ -378,6 +380,8 @@ export default function CreateBookPage() {
 
       addBook(fallbackBook)
       setCurrentBookId(fallbackBook.id)
+      setCreateBookStep(0)
+      setCreateBookData(null)
       setPage('book-reader')
     } finally {
       setIsGenerating(false)
