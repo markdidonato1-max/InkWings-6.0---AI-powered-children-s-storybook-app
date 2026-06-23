@@ -49,6 +49,10 @@ export async function POST(request: NextRequest) {
       console.log(`[generate-image] Using reference image for img2img (strength: 0.65)`);
     }
 
+    // Add timeout to prevent hanging forever
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+
     const response = await fetch(`${baseUrl}/images/generations`, {
       method: 'POST',
       headers: {
@@ -56,7 +60,10 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const duration = Date.now() - startTime;
 
@@ -75,6 +82,9 @@ export async function POST(request: NextRequest) {
           response_format: 'b64_json',
         };
         
+        const fallbackController = new AbortController();
+        const fallbackTimeout = setTimeout(() => fallbackController.abort(), 45000);
+        
         const fallbackResponse = await fetch(`${baseUrl}/images/generations`, {
           method: 'POST',
           headers: {
@@ -82,7 +92,10 @@ export async function POST(request: NextRequest) {
             'Authorization': `Bearer ${apiKey}`,
           },
           body: JSON.stringify(fallbackBody),
+          signal: fallbackController.signal,
         });
+
+        clearTimeout(fallbackTimeout);
         
         if (fallbackResponse.ok) {
           const fallbackData = await fallbackResponse.json();

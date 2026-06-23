@@ -50,51 +50,31 @@ export async function POST(request: NextRequest) {
 
     const specs = ageSpecs[ageRange || '6-8'] || ageSpecs['6-8'];
 
-    // Build the combined prompt for Llama 3
-    const systemPrompt = `You are an expert children's book author and illustrator. Write engaging, vivid stories with rich visual descriptions on every page.
+    // Build the combined prompt for Llama 3 - KEEP IT SHORT AND FOCUSED
+    const systemPrompt = `You are an expert children's book author. Write vivid, engaging stories.
 
-CRITICAL RULES FOR imageDescription:
-- Every imageDescription MUST be a detailed, vivid scene description for an illustrator
-- Include the character's NAME, their exact ACTION, their FACIAL EXPRESSION, and the SETTING details
-- Describe colors, lighting, objects, weather, and atmosphere
-- The imageDescription must match the EXACT events described in the page text
-- Make it cinematic and visually rich - an illustrator should be able to paint exactly what you describe
-- Each imageDescription should be 40-80 words of vivid visual detail
+CRITICAL: Return ONLY valid JSON with exactly this format:
+{"title": "Story Title", "pages": [{"pageNumber": 1, "text": "Story text here...", "imageDescription": "Visual scene description for illustrator"}]}
 
-WRITING RULES:
-- Words per page: ${specs.wordsPerPage}
-- Sentences per page: ${specs.sentencesPerPage}
+Writing specs for age ${ageRange || '6-8'}:
+- ${specs.wordsPerPage}
+- ${specs.sentencesPerPage}
 - Vocabulary: ${specs.vocabulary}
-- Include the child's name naturally in the story
-- If a moral is specified, weave it naturally (don't preach)
-- Return ONLY valid JSON with a "title" string and "pages" array
-- Each page has: pageNumber (int), text (string), imageDescription (string)
-- imageDetail guideline: ${specs.imageDetail}
+- Include child's name "${childName || 'the reader'}" naturally
+- Make imageDescription vivid and scene-specific (40-60 words)
+- If moral: weave it naturally, never preach
 
-Example format:
-{
-  "title": "Story Title",
-  "pages": [
-    {
-      "pageNumber": 1,
-      "text": "The story text...",
-      "imageDescription": "A vivid scene description with character name, action, emotion, setting, colors, lighting..."
-    }
-  ]
-}`;
+imageDescription rules: Describe the exact scene with character name, action, emotion, setting, colors, lighting. Example: "A young orange fox named Jamie tiptoeing through a shimmering meadow, ears perked curiously, golden wildflowers swaying, warm afternoon sunlight filtering through fluffy clouds"`;
 
-    const userPrompt = `Write a ${storyStyle || 'fun'} ${genre || 'adventure'} story for a child named ${childName || 'the reader'} aged ${ageRange || '6-8'}.
+    const userPrompt = `Write a ${storyStyle || 'fun'} ${genre || 'adventure'} story.
 
-Story idea: ${prompt || 'A magical adventure with friendly animals'}
-${moral && moral !== 'none' ? `Moral to weave in: ${moral}` : ''}
+Idea: ${prompt || 'A magical adventure with friendly animals'}
+${moral && moral !== 'none' ? `Moral: ${moral}` : ''}
 
 Requirements:
-- Exactly ${pageCount} pages
-- ${imageCount} pages should have illustrations (space them evenly across the pages)
-- Each page with an illustration must have a rich, detailed imageDescription that matches the scene exactly
-- The imageDescription should describe what an illustrator would paint for that specific page
-- Return ONLY the JSON object, no markdown, no extra text, no explanation
-- Make sure the story text and image descriptions are rich and vivid`;
+- ${pageCount} pages total
+- Each page has: text, imageDescription
+- Return ONLY the JSON object, no markdown, no explanation`;
 
     // Llama 3 chat format
     const fullInput = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
@@ -110,6 +90,10 @@ ${userPrompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
     const startTime = Date.now();
 
+    // Add timeout to prevent hanging forever
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+
     const response = await fetch(inferenceUrl, {
       method: 'POST',
       headers: {
@@ -120,7 +104,10 @@ ${userPrompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         input: fullInput,
         stream: false,
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const duration = Date.now() - startTime;
 
