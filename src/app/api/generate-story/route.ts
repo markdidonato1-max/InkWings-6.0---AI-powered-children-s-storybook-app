@@ -83,9 +83,9 @@ Requirements:
 
     const startTime = Date.now();
 
-    // Add timeout to prevent hanging forever
+    // Add timeout to prevent hanging forever (2 minutes for local testing with large models)
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+    const timeout = setTimeout(() => controller.abort(), 120000); // 120 second timeout
 
     const response = await fetch(inferenceUrl, {
       method: 'POST',

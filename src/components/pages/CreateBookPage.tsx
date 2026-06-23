@@ -170,9 +170,9 @@ export default function CreateBookPage() {
         childName: currentChild?.name || 'Friend',
       }
 
-      // Frontend timeout: abort after 60 seconds (backend timeout is 45s, so we give it a bit more)
+      // Frontend timeout: abort after 130 seconds (backend timeout is 120s, so we give it a bit more)
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 60000)
+      const timeout = setTimeout(() => controller.abort(), 130000)
 
       const response = await fetch('/api/generate-story', {
         method: 'POST',
