@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning';
+    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/meta-llama/Meta-Llama-3-8B-Instruct';
 
     console.log(`[generate-story] API key loaded: ${apiKey ? apiKey.slice(0, 8) + '...' + apiKey.slice(-4) : 'MISSING'}`);
     console.log(`[generate-story] Inference URL: ${inferenceUrl}`);
@@ -55,7 +55,8 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `You are an expert children's book author. Write vivid, engaging stories.
 
-CRITICAL: Return ONLY valid JSON with exactly this format:
+STRICT REQUIREMENT: You MUST return ONLY valid JSON. No markdown, no explanations, no text outside the JSON.
+The JSON format must be exactly:
 {"title": "Story Title", "pages": [{"pageNumber": 1, "text": "Story text here...", "imageDescription": "Visual scene description for illustrator"}]}
 
 Writing specs for age ${ageRange || '6-8'}:
@@ -76,7 +77,7 @@ ${moral && moral !== 'none' ? `Moral: ${moral}` : ''}
 Requirements:
 - ${pageCount} pages total
 - Each page has: text, imageDescription
-- Return ONLY the JSON object, no markdown, no explanation`;
+- Return ONLY the JSON object. No markdown, no explanations, no text before or after the JSON.`;
 
     // Native inference format with Llama-style tokens
     const fullInput = `<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n${systemPrompt}\n\n${userPrompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`;
