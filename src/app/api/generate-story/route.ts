@@ -9,6 +9,9 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.DEEPINFRA_API_KEY;
     const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/google/gemma-4-31B-it';
 
+    console.log(`[generate-story] API key loaded: ${apiKey ? apiKey.slice(0, 8) + '...' + apiKey.slice(-4) : 'MISSING'}`);
+    console.log(`[generate-story] Inference URL: ${inferenceUrl}`);
+
     if (!apiKey) {
       return Response.json(
         { error: 'API key not configured on server. Please contact the administrator.' },
