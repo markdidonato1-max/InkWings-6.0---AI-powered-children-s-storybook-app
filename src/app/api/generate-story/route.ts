@@ -7,8 +7,7 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const baseUrl = process.env.DEEPINFRA_BASE_URL || 'https://api.deepinfra.com/v1/openai';
-    const model = process.env.DEEPINFRA_STORY_MODEL || 'google/gemma-4-26B-A4B-it';
+    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/google/gemma-4-26B-A4B-it';
 
     if (!apiKey) {
       return Response.json(
@@ -76,8 +75,11 @@ Requirements:
 - Each page has: text, imageDescription
 - Return ONLY the JSON object, no markdown, no explanation`;
 
-    console.log(`[generate-story] Calling DeepInfra OpenAI endpoint: ${baseUrl}/chat/completions`);
-    console.log(`[generate-story] Model: ${model}, Age group: ${ageRange || '6-8'}`);
+    // Gemma-4 native inference format (from DeepInfra docs)
+    const fullInput = `<|begin_of_text|><start_of_turn>user\n\n${systemPrompt}\n\n${userPrompt}<end_of_turn>\n<start_of_turn>model\n\n`;
+
+    console.log(`[generate-story] Calling DeepInfra native inference: ${inferenceUrl}`);
+    console.log(`[generate-story] Age group: ${ageRange || '6-8'}`);
 
     const startTime = Date.now();
 
@@ -85,21 +87,15 @@ Requirements:
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000); // 45 second timeout
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(inferenceUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 4096,
-        response_format: { type: 'json_object' },
+        input: fullInput,
+        stop: [],
       }),
       signal: controller.signal,
     });
@@ -118,7 +114,7 @@ Requirements:
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.results?.[0]?.generated_text;
 
     if (!content) {
       console.error('[generate-story] No content in response:', data);
