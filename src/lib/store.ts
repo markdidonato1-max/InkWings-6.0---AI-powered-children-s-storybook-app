@@ -1,11 +1,76 @@
 'use client'
 
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, type StateStorage } from 'zustand/middleware'
 import { hashPasscode, verifyPasscode, generateUUID } from './utils'
 import { getImagePositions } from './image-utils'
 
 export { getImagePositions } // Re-export for convenience
+
+// ─── IndexedDB Storage (handles large base64 images beyond localStorage 5MB limit) ───
+
+const DB_NAME = 'inkwings-db'
+const STORE_NAME = 'zustand-store'
+const DB_VERSION = 1
+
+function createIndexedDBStorage(): StateStorage {
+  const getDB = (): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME)
+        }
+      }
+    })
+  }
+
+  return {
+    getItem: async (name: string) => {
+      const db = await getDB()
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly')
+        const store = tx.objectStore(STORE_NAME)
+        const request = store.get(name)
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => {
+          const result = request.result
+          db.close()
+          resolve(result ?? null)
+        }
+      })
+    },
+    setItem: async (name: string, value: string) => {
+      const db = await getDB()
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite')
+        const store = tx.objectStore(STORE_NAME)
+        const request = store.put(value, name)
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => {
+          db.close()
+          resolve()
+        }
+      })
+    },
+    removeItem: async (name: string) => {
+      const db = await getDB()
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite')
+        const store = tx.objectStore(STORE_NAME)
+        const request = store.delete(name)
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => {
+          db.close()
+          resolve()
+        }
+      })
+    },
+  }
+}
 
 // ─── Data Models ───────────────────────────────────────────────
 
@@ -399,19 +464,13 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'inkwings-storage',
+      storage: createIndexedDBStorage(),
       partialize: (state) => ({
         parentAccount: state.parentAccount,
         isAuthenticated: state.isAuthenticated,
         currentChildId: state.currentChildId,
         mode: state.mode,
-        // Don't persist base64 images — they exceed localStorage 5MB limit
-        books: state.books.map((book) => ({
-          ...book,
-          pages: book.pages.map((page) => ({
-            ...page,
-            imageUrl: undefined, // Strip base64 images from storage
-          })),
-        })),
+        books: state.books,
         currentBookId: state.currentBookId,
         currentPage: state.currentPage,
         imageStyle: state.imageStyle,
