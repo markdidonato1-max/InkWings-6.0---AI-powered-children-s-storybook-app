@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/meta-llama/Meta-Llama-3-8B-Instruct';
+    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/google/gemma-4-26B-A4B-it';
 
     if (!apiKey) {
       return Response.json(
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     const specs = ageSpecs[ageRange || '6-8'] || ageSpecs['6-8'];
 
-    // Build the combined prompt for Llama 3 - KEEP IT SHORT AND FOCUSED
+    // Build the combined prompt for Gemma 4
     const systemPrompt = `You are an expert children's book author. Write vivid, engaging stories.
 
 CRITICAL: Return ONLY valid JSON with exactly this format:
@@ -76,13 +76,12 @@ Requirements:
 - Each page has: text, imageDescription
 - Return ONLY the JSON object, no markdown, no explanation`;
 
-    // Llama 3 chat format
-    const fullInput = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    // Gemma-4 chat format (uses <start_of_turn> / <end_of_turn> tokens)
+    const fullInput = `<start_of_turn>user
+${systemPrompt}
 
-${systemPrompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-${userPrompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
+${userPrompt}<end_of_turn>
+<start_of_turn>model
 `;
 
     console.log(`[generate-story] Calling DeepInfra inference: ${inferenceUrl}`);
