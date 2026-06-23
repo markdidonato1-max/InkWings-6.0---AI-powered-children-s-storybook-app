@@ -49,9 +49,9 @@ export async function POST(request: NextRequest) {
       console.log(`[generate-image] Using reference image for img2img (strength: 0.65)`);
     }
 
-    // Add timeout to prevent hanging forever (2 minutes for image generation with img2img)
+    // Add timeout to prevent hanging forever (5 minutes for image generation with img2img)
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+    const timeout = setTimeout(() => controller.abort(), 300000); // 300 second timeout
 
     const response = await fetch(`${baseUrl}/images/generations`, {
       method: 'POST',
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
         };
         
         const fallbackController = new AbortController();
-        const fallbackTimeout = setTimeout(() => fallbackController.abort(), 120000); // 120 second timeout
+        const fallbackTimeout = setTimeout(() => fallbackController.abort(), 300000); // 300 second timeout
         
         const fallbackResponse = await fetch(`${baseUrl}/images/generations`, {
           method: 'POST',

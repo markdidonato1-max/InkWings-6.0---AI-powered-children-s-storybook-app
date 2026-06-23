@@ -16,35 +16,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Age-appropriate writing specs - DOUBLED word counts + advanced tier
+    // Age-appropriate writing specs
     const ageSpecs: Record<string, { wordsPerPage: string; sentencesPerPage: string; vocabulary: string; example: string; imageDetail: string }> = {
       '3-5': {
-        wordsPerPage: '40-80 words (about 5-8 sentences per page)',
-        sentencesPerPage: '5-8 short sentences',
-        vocabulary: 'very simple everyday words, short sentences (3-7 words each), lots of repetition, onomatopoeia, rhyming encouraged, simple dialogue with exclamations',
+        wordsPerPage: '30-60 words (about 4-6 sentences per page)',
+        sentencesPerPage: '4-6 very short sentences',
+        vocabulary: 'very simple everyday words, short sentences (3-5 words each), lots of repetition, onomatopoeia, rhyming encouraged, simple dialogue with exclamations',
         example: 'The little fox named Jamie went hop, hop, hop across the soft green grass. "Look!" said Jamie, pointing with her tiny paw. "A big red flower!" A happy bee buzzed by. "Hello, Bee!" said Jamie. The bee buzzed back. "Hello, little fox!"',
         imageDetail: 'Describe the exact scene with the character, their specific action, emotion, and the setting details (colors, objects, weather). Example: "A small red fox named Jamie hopping joyfully across a bright green meadow, pointing at a big red flower with her tiny paw, a happy yellow bee buzzing nearby, golden sunshine, soft clouds, colorful wildflowers"'
       },
       '6-8': {
-        wordsPerPage: '100-200 words (about 6-10 sentences per page)',
-        sentencesPerPage: '6-10 medium sentences',
-        vocabulary: 'simple but varied vocabulary, medium-length sentences (6-12 words), descriptive language with adjectives, some dialogue, occasional bigger words with context clues, short paragraphs',
+        wordsPerPage: '80-150 words (about 5-8 sentences per page)',
+        sentencesPerPage: '5-8 medium sentences',
+        vocabulary: 'simple but varied vocabulary, medium-length sentences (6-10 words), descriptive language with adjectives, some dialogue, occasional bigger words with context clues, short paragraphs',
         example: 'Finn the fox tiptoed through the shimmering meadow, his ears perked up at every sound. The golden flowers swayed in the gentle breeze, releasing sweet fragrance into the warm afternoon air. "I wonder what is beyond that hill?" Finn thought, his tail swishing with excitement. A butterfly with wings like stained glass fluttered ahead, as if beckoning him forward.',
         imageDetail: 'Describe the exact scene with the character, their specific action, emotion, and the setting details. Include the character name, what they are doing, facial expression, and the environment. Example: "A young orange fox named Finn tiptoeing cautiously through a shimmering meadow dotted with golden wildflowers, his ears perked up curiously, tail swishing with excitement, a colorful butterfly with stained-glass wings fluttering ahead of him, warm afternoon sunlight, soft green grass, distant rolling hills"'
       },
       '9-12': {
-        wordsPerPage: '240-400 words (about 8-14 sentences per page, 2-3 paragraphs)',
-        sentencesPerPage: '8-14 sentences forming 2-3 short paragraphs',
-        vocabulary: 'rich vocabulary, complex sentences (10-18 words), vivid descriptive language, metaphors and similes, sophisticated narrative with internal thoughts, dialogue that reveals character personality',
-        example: 'Professor Fox adjusted his brass spectacles and peered at the ancient map spread across his oak desk. The parchment was brittle with age, its edges crumbling like autumn leaves beneath his careful touch. According to the faded ink, the entrance to the Crystal Cavern lay just beyond the Whispering Falls — a place no one from the village had dared to visit in over a hundred years. "But someone must go," he whispered to himself, feeling the weight of destiny settle upon his shoulders like a heavy cloak.',
+        wordsPerPage: '200-250 words (about 8-12 sentences per page, 2-3 paragraphs)',
+        sentencesPerPage: '8-12 sentences forming 2-3 short paragraphs',
+        vocabulary: 'rich vocabulary, complex sentences (10-15 words), vivid descriptive language, metaphors and similes, sophisticated narrative with internal thoughts, dialogue that reveals character personality',
+        example: 'Professor Fox adjusted his brass spectacles and peered at the ancient map spread across his oak desk. The parchment was brittle with age, its edges crumbling like autumn leaves beneath his careful touch. According to the faded ink, the entrance to the Crystal Cavern lay just beyond the Whispering Falls. "But someone must go," he whispered, feeling the weight of destiny settle upon his shoulders like a heavy cloak.',
         imageDetail: 'Describe the exact scene with the character, their specific action, emotion, and the setting details. Include rich visual details, character expressions, lighting, atmosphere, and specific objects. Example: "An elderly fox professor wearing round brass spectacles, leaning over an ancient oak desk, studying a yellowed parchment map with faded ink, his gray fur catching the warm candlelight, a heavy velvet cloak draped over his shoulders, dusty bookshelves in the background, a single candle flickering, dust motes dancing in the amber light"'
       },
       '9-12-advanced': {
-        wordsPerPage: '400-700 words (about 12-20 sentences per page, 3-4 paragraphs)',
-        sentencesPerPage: '12-20 sentences forming 3-4 paragraphs with rich world-building',
-        vocabulary: 'advanced vocabulary (Harry Potter reading level), complex multi-clause sentences (15-25 words), rich world-building, layered subplots, nuanced character emotions, foreshadowing, sophisticated dialogue with distinct character voices, vivid sensory descriptions',
-        example: 'The ancient library of Mistwood Hollow had stood for three centuries, its towering shelves of leather-bound tomes stretching into the shadowy heights above like silent guardians of forgotten knowledge. Young Marcus stood at the entrance, his heart thumping a frantic rhythm against his ribs as the musty scent of old parchment and cinnamon wafted toward him. He had waited eleven years for this moment — ever since his grandmother had whispered the secret on her deathbed, her weathered hand clutching his with surprising strength. "The key is not in the lock, my boy," she had said, her milky eyes suddenly piercing with clarity. "It is in the story that the lock remembers." Now, as moonlight filtered through the stained-glass windows casting emerald and sapphire patterns across the dusty floor, Marcus realized that some doors opened not with force, but with understanding.',
-        imageDetail: 'Describe the exact scene with rich, cinematic detail. Include the character name, their specific action, facial expression, body language, emotions, lighting, atmosphere, and specific environmental details. Use vivid sensory language. Example: "A young boy named Marcus standing in the grand entrance of an ancient library called Mistwood Hollow, towering shelves of leather-bound books stretching into shadowy heights above him, his heart visibly pounding with nervous excitement, moonlight streaming through colorful stained-glass windows casting emerald and sapphire patterns across the dusty wooden floor, an ornate brass key clutched in his trembling hand, ancient stone walls covered in creeping ivy, dust motes dancing in the moonbeams, the musty scent of old parchment and cinnamon implied through visual atmosphere"'
+        wordsPerPage: '200-250 words (about 8-12 sentences per page, 2-3 paragraphs)',
+        sentencesPerPage: '8-12 sentences forming 2-3 paragraphs with rich world-building',
+        vocabulary: 'advanced vocabulary (Harry Potter reading level), complex multi-clause sentences (12-18 words), rich world-building, nuanced character emotions, foreshadowing, sophisticated dialogue with distinct character voices, vivid sensory descriptions',
+        example: 'The ancient library of Mistwood Hollow had stood for three centuries, its towering shelves stretching into the shadowy heights above. Young Marcus stood at the entrance, his heart thumping against his ribs as the musty scent of old parchment wafted toward him. He had waited eleven years for this moment. "The key is not in the lock, my boy," his grandmother had said, her eyes piercing with clarity. "It is in the story that the lock remembers." Now, as moonlight filtered through the stained-glass windows, Marcus realized that some doors opened not with force, but with understanding.',
+        imageDetail: 'Describe the exact scene with rich, cinematic detail. Include the character name, their specific action, facial expression, body language, emotions, lighting, atmosphere, and specific environmental details. Use vivid sensory language. Example: "A young boy named Marcus standing in the grand entrance of an ancient library called Mistwood Hollow, towering shelves of leather-bound books stretching into shadowy heights above him, his heart visibly pounding with nervous excitement, moonlight streaming through colorful stained-glass windows casting emerald and sapphire patterns across the dusty wooden floor, an ornate brass key clutched in his trembling hand, ancient stone walls covered in creeping ivy, dust motes dancing in the moonbeams"'
       },
     };
 
@@ -83,9 +83,9 @@ Requirements:
 
     const startTime = Date.now();
 
-    // Add timeout to prevent hanging forever (2 minutes for local testing with large models)
+    // Add timeout to prevent hanging forever (5 minutes for local testing with large models)
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+    const timeout = setTimeout(() => controller.abort(), 300000); // 300 second timeout
 
     const response = await fetch(inferenceUrl, {
       method: 'POST',
