@@ -8,7 +8,6 @@ import { useAppStore, type BookPage } from '@/lib/store'
 // Fix MIME type for base64 images — ZAI SDK returns JPEG but old code used PNG prefix
 function fixImageUrl(url: string | undefined): string | undefined {
   if (!url) return url
-  // If URL has wrong PNG prefix but data is actually JPEG, fix it
   if (url.startsWith('data:image/png;base64,/9j/')) {
     return url.replace('data:image/png;base64,', 'data:image/jpeg;base64,')
   }
@@ -16,13 +15,8 @@ function fixImageUrl(url: string | undefined): string | undefined {
 }
 
 // Get the text of the pages surrounding an image for the prompt
-// Image i covers pages (2i) and (2i+1). If odd pages, last image covers 1 page.
-function getImagePromptText(pages: { text: string }[], currentPageIndex: number, totalImageCount: number): string {
-  // Find which image index this page corresponds to
-  // Images are placed every 2 pages: image i is at page (2i)
+function getImagePromptText(pages: { text: string }[], currentPageIndex: number): string {
   const imageIndex = Math.floor(currentPageIndex / 2)
-
-  // The image covers pages (2*imageIndex) and (2*imageIndex+1)
   const startPage = imageIndex * 2
   const endPage = Math.min(startPage + 1, pages.length - 1)
 
@@ -36,12 +30,36 @@ function getImagePromptText(pages: { text: string }[], currentPageIndex: number,
 }
 
 export default function BookReaderPage() {
-  const { currentBookId, books, setPage, toggleFavorite, incrementReadCount, updateBook, nvidiaApiKey, nvidiaImageStyle, nvidiaImageModel } = useAppStore()
+  const { currentBookId, books, setPage, toggleFavorite, incrementReadCount, imageStyle } = useAppStore()
   const book = books.find((b) => b.id === currentBookId)
 
-  const [currentPage, setCurrentPage] = useState(0)
+  // Restore last read page from book data, or start at 0
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (!book) return 0
+    return book.lastReadPage && book.lastReadPage < book.pages.length ? book.lastReadPage : 0
+  })
   const [loadingImage, setLoadingImage] = useState(false)
-  const hasCountedRead = useRef(false)
+  const [imageError, setImageError] = useState<string | null>(null)
+
+  // Track which books we've counted as "read" in this session (prevents re-counting on re-navigation)
+  const countedBooks = useRef<Set<string>>(new Set())
+  // Track which page IDs have failed image generation (prevents infinite retry loops)
+  const failedPageIds = useRef<Set<string>>(new Set())
+  // Track current page in a ref to avoid stale closures in beforeunload
+  const currentPageRef = useRef(currentPage)
+  currentPageRef.current = currentPage
+
+  // Save position on page close (beforeunload) — does NOT depend on book object to avoid infinite loops
+  useEffect(() => {
+    if (!currentBookId) return
+    const handleBeforeUnload = () => {
+      useAppStore.getState().updateBook(currentBookId, { lastReadPage: currentPageRef.current })
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [currentBookId])
 
   const goNext = useCallback(() => {
     if (book && currentPage < book.pages.length - 1) {
@@ -55,48 +73,43 @@ export default function BookReaderPage() {
     }
   }, [currentPage])
 
-  // Track reading when reaching the last page — only once per session
+  // Track reading when reaching the last page — only once per session per book
   useEffect(() => {
-    if (book && currentPage === book.pages.length - 1 && !hasCountedRead.current) {
-      hasCountedRead.current = true
+    if (book && currentPage === book.pages.length - 1 && !countedBooks.current.has(book.id)) {
+      countedBooks.current.add(book.id)
       incrementReadCount(book.id)
     }
   }, [currentPage, book, incrementReadCount])
 
   // Generate image for current page if it hasImage and no imageUrl yet
+  // CRITICAL: Does NOT depend on `book` object to avoid infinite re-render loops.
+  // Uses getState() inside the async function to read the latest store state.
   useEffect(() => {
-    if (!book) return
-    const page = book.pages[currentPage]
+    if (!currentBookId) return
+
+    // Read fresh state from the store to avoid stale closures and dependency loops
+    const state = useAppStore.getState()
+    const freshBook = state.books.find((b) => b.id === currentBookId)
+    if (!freshBook) return
+    const page = freshBook.pages[currentPage]
     if (!page || !page.hasImage || page.imageUrl) return
+    if (failedPageIds.current.has(page.id)) return
 
     let cancelled = false
     setLoadingImage(true)
+    setImageError(null)
 
     const generateImage = async () => {
       try {
-        // Build the best possible image prompt:
-        // 1) Use the dedicated imageDescription from the story API (designed specifically for illustration)
-        // 2) Fall back to combining the text of the pages this image covers
-        // 3) Last resort: the page text or a generic prompt
-        const surroundingText = getImagePromptText(book.pages, currentPage, book.imageCount)
+        const surroundingText = getImagePromptText(freshBook.pages, currentPage)
         const imagePrompt = page.imageDescription || surroundingText || page.text || `Illustration for page ${currentPage + 1}`
 
         const requestBody: Record<string, unknown> = {
           prompt: imagePrompt,
-          style: nvidiaImageStyle,
+          style: imageStyle,
         }
 
-        // Always use nvidia-image route which has ZAI SDK as primary
-        const imgEndpoint = '/api/nvidia-image'
-
-        // Only send NVIDIA credentials if both API key AND a valid image model are provided
-        // Most NVIDIA API keys only have text/chat models — image models require separate subscription
-        if (nvidiaApiKey && nvidiaImageModel) {
-          requestBody.apiKey = nvidiaApiKey
-          requestBody.model = nvidiaImageModel
-        }
-
-        const response = await fetch(imgEndpoint, {
+        const response = await fetch('/api/generate-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
@@ -107,18 +120,27 @@ export default function BookReaderPage() {
           throw new Error('Failed')
         }
         const data = await response.json()
-        if (data.base64 && !cancelled) {
-          // Detect image format from base64 header — ZAI SDK returns JPEG, NVIDIA may return PNG
-          const isJpeg = data.base64.startsWith('/9j/')
-          const imageUrl = `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${data.base64}`
-          updateBook(book.id, {
-            pages: book.pages.map((p: BookPage) =>
+        if ((data.base64 || data.imageUrl) && !cancelled) {
+          const imageUrl = data.imageUrl || (() => {
+            const isJpeg = data.base64.startsWith('/9j/')
+            return `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${data.base64}`
+          })()
+          // Use getState() to get the latest pages to avoid overwriting other concurrent updates
+          const latestState = useAppStore.getState()
+          const latestBook = latestState.books.find((b) => b.id === currentBookId)
+          if (!latestBook) return
+          latestState.updateBook(currentBookId, {
+            pages: latestBook.pages.map((p: BookPage) =>
               p.id === page.id ? { ...p, imageUrl } : p
             ),
           })
         }
       } catch (err) {
         console.error(`[BookReader] Image gen error for page ${currentPage + 1}:`, err)
+        if (!cancelled) {
+          failedPageIds.current.add(page.id)
+          setImageError('Could not generate illustration')
+        }
       } finally {
         if (!cancelled) setLoadingImage(false)
       }
@@ -130,7 +152,7 @@ export default function BookReaderPage() {
       clearTimeout(timer)
       setLoadingImage(false)
     }
-  }, [currentPage, book, updateBook, nvidiaApiKey, nvidiaImageStyle, nvidiaImageModel])
+  }, [currentPage, currentBookId, imageStyle])
 
   if (!book) {
     return (
@@ -152,7 +174,11 @@ export default function BookReaderPage() {
       {/* Top bar */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-purple-100 px-4 py-3 flex items-center justify-between">
         <button
-          onClick={() => setPage('child-home')}
+          onClick={() => {
+            // Save position before leaving
+            useAppStore.getState().updateBook(book.id, { lastReadPage: currentPage })
+            setPage('child-home')
+          }}
           className="text-gray-500 hover:text-gray-700 transition-colors"
         >
           <X className="w-6 h-6" />
@@ -202,6 +228,7 @@ export default function BookReaderPage() {
                         src={fixImageUrl(page.imageUrl)}
                         alt={`Illustration for page ${currentPage + 1}`}
                         className="w-full h-full object-cover"
+                        onError={() => setImageError('Image failed to load')}
                       />
                     </motion.div>
                   ) : (
@@ -210,6 +237,11 @@ export default function BookReaderPage() {
                         <div className="flex flex-col items-center gap-3">
                           <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
                           <p className="text-sm text-purple-400">Painting illustration...</p>
+                        </div>
+                      ) : imageError ? (
+                        <div className="text-center p-6">
+                          <span className="text-4xl block mb-2">🎨</span>
+                          <p className="text-sm text-purple-400">{imageError}</p>
                         </div>
                       ) : (
                         <div className="text-center p-6">
@@ -292,7 +324,10 @@ export default function BookReaderPage() {
           </div>
 
           <button
-            onClick={isLastPage ? () => setPage('child-home') : goNext}
+            onClick={isLastPage ? () => {
+              useAppStore.getState().updateBook(book.id, { lastReadPage: currentPage })
+              setPage('child-home')
+            } : goNext}
             className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
               isLastPage
                 ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg shadow-pink-500/30'

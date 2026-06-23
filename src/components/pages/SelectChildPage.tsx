@@ -15,6 +15,11 @@ export default function SelectChildPage() {
     setPage('child-home')
   }
 
+  const addChild = () => {
+    useAppStore.getState().setOnboardingStep(2)
+    setPage('onboarding')
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950 flex flex-col p-6 relative overflow-hidden">
       {/* Animated orbs */}
@@ -79,7 +84,7 @@ export default function SelectChildPage() {
 
           {/* Add Child */}
           <motion.button
-            onClick={() => setPage('onboarding')}
+            onClick={addChild}
             className="rounded-2xl bg-white/5 backdrop-blur-sm border-2 border-dashed border-white/20 p-6 flex flex-col items-center gap-3 hover:bg-white/10 hover:border-white/40 transition-all group"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

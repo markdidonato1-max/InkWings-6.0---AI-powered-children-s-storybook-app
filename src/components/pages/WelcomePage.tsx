@@ -166,7 +166,7 @@ export default function WelcomePage() {
           animate={{ opacity: 1 }}
           transition={{ delay: 1.3 }}
         >
-          © 2024 InkWings. Made with ❤️ for young readers.
+          © {new Date().getFullYear()} InkWings. Made with ❤️ for young readers.
         </motion.p>
       </motion.div>
     </div>

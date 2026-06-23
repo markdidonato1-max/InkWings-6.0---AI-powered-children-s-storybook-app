@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Sparkles, BookOpen, Image, Loader2, Camera, Upload, X } from 'lucide-react'
 import { useAppStore, STORY_STYLES, GENRES, MORALS, AGE_RANGES, BOOK_COVER_GRADIENTS, BOOK_COVER_EMOJIS, type Book, type BookPage } from '@/lib/store'
+import { getImagePositions } from '@/lib/image-utils'
+import { generateUUID } from '@/lib/utils'
 
 const STEPS = [
   'Story Idea & Drawing',
@@ -21,31 +23,6 @@ const PAGE_PRESETS = [
   { label: 'Long', emoji: '📗', pages: 14, images: 7 },
   { label: 'Epic', emoji: '📕', pages: 20, images: 10 },
 ]
-
-// Calculate which pages get images based on imageCount and pageCount
-// Images are placed every 2 pages: image i goes on page (i*2) (0-indexed)
-// If odd pages, the last image covers just 1 page
-function getImagePositions(pageCount: number, imageCount: number): Set<number> {
-  const positions = new Set<number>()
-  if (imageCount <= 0 || pageCount <= 0) return positions
-
-  // Place images every 2 pages from the start
-  for (let i = 0; i < imageCount; i++) {
-    const pos = i * 2
-    if (pos < pageCount) {
-      positions.add(pos)
-    } else {
-      // If more images than pairs, distribute remaining at the end
-      const remaining = imageCount - i
-      const startPos = pageCount - remaining
-      for (let j = i; j < imageCount; j++) {
-        positions.add(Math.max(startPos + (j - i), 0))
-      }
-      break
-    }
-  }
-  return positions
-}
 
 // Get the text of the pages that an image covers for the prompt
 // Image i covers pages (2i) and (2i+1). If odd pages and last image, covers just 1 page.
@@ -66,7 +43,7 @@ export default function CreateBookPage() {
   const {
     setPage, currentChildId, parentAccount, addBook, setCurrentBookId,
     createBookStep, setCreateBookStep, createBookData, setCreateBookData,
-    nvidiaApiKey, nvidiaStoryModel, nvidiaImageStyle, nvidiaImageModel,
+    imageStyle,
   } = useAppStore()
 
   const currentChild = parentAccount?.children.find((c) => c.id === currentChildId)
@@ -192,15 +169,7 @@ export default function CreateBookPage() {
         childName: currentChild?.name || 'Friend',
       }
 
-      // Use NVIDIA API if key is set, otherwise use default
-      const storyEndpoint = nvidiaApiKey ? '/api/nvidia-story' : '/api/generate-story'
-
-      if (nvidiaApiKey) {
-        requestBody.apiKey = nvidiaApiKey
-        requestBody.model = nvidiaStoryModel
-      }
-
-      const response = await fetch(storyEndpoint, {
+      const response = await fetch('/api/generate-story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -219,9 +188,9 @@ export default function CreateBookPage() {
       // Determine image positions
       const imagePositions = getImagePositions(pageCount, imageCount)
 
-      // Build pages with hasImage — preserve imageDescription from the API for illustration prompts
+      // Build pages with hasImage
       const pagesData: BookPage[] = (data.pages || []).map((p: { pageNumber: number; text: string; imageDescription?: string; hasImage?: boolean }, i: number) => ({
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         pageNumber: p.pageNumber || i + 1,
         text: p.text || '',
         imageUrl: undefined,
@@ -230,20 +199,18 @@ export default function CreateBookPage() {
         hasImage: imagePositions.has(i),
       }))
 
-      // Step 3: Generate images for pages that have images
+      // Step 3: Generate images for pages that have images — SEQUENTIAL CASCADE
+      // Each image uses the previous image as reference (for visual continuity)
       let imagesGenerated = 0
       const totalImages = imageCount
       const imagePageIndices = Array.from(imagePositions).sort((a, b) => a - b)
+      let previousImageBase64: string | null = drawingPhoto // First image starts from kid's drawing
 
       for (const pageIdx of imagePageIndices) {
         imagesGenerated++
         setGenerationStep(`Painting image ${imagesGenerated} of ${totalImages}...`)
         setGenerationProgress(40 + Math.round((imagesGenerated / totalImages) * 50))
 
-        // Build the best possible image prompt:
-        // 1) Use the dedicated imageDescription from the story API (designed specifically for illustration)
-        // 2) Fall back to combining the text of the pages this image covers
-        // 3) Last resort: generic prompt
         const imageIndex = imagesGenerated - 1
         const combinedText = getImagePromptText(pagesData, imageIndex)
         const imageDescription = pagesData[pageIdx]?.imageDescription || data.pages[pageIdx]?.imageDescription
@@ -252,25 +219,20 @@ export default function CreateBookPage() {
         try {
           const imgRequestBody: Record<string, unknown> = {
             prompt: imagePrompt,
-            style: nvidiaImageStyle,
+            style: imageStyle,
           }
 
-          // Always use nvidia-image route which has ZAI SDK as primary
-          const imgEndpoint = '/api/nvidia-image'
-
-          // Only send NVIDIA credentials if both API key AND a valid image model are provided
-          // Most NVIDIA API keys only have text/chat models — image models require separate subscription
-          if (nvidiaApiKey && nvidiaImageModel) {
-            imgRequestBody.apiKey = nvidiaApiKey
-            imgRequestBody.model = nvidiaImageModel
+          // Cascade: first image uses kid's drawing, subsequent images use previous generated image
+          if (previousImageBase64) {
+            imgRequestBody.referenceImage = previousImageBase64
+            if (imagesGenerated === 1) {
+              console.log(`[CreateBook] Image 1: using kid's drawing as reference`)
+            } else {
+              console.log(`[CreateBook] Image ${imagesGenerated}: using previous image as reference`)
+            }
           }
 
-          // Pass the drawing photo as reference for image-to-image generation
-          if (drawingPhoto) {
-            imgRequestBody.referenceImage = drawingPhoto
-          }
-
-          const imgResponse = await fetch(imgEndpoint, {
+          const imgResponse = await fetch('/api/generate-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(imgRequestBody),
@@ -278,14 +240,23 @@ export default function CreateBookPage() {
 
           if (imgResponse.ok) {
             const imgData = await imgResponse.json()
-            if (imgData.base64) {
-              // Detect image format from base64 header — ZAI SDK returns JPEG, NVIDIA may return PNG
-              const isJpeg = imgData.base64.startsWith('/9j/')
-              pagesData[pageIdx].imageUrl = `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${imgData.base64}`
+            if (imgData.base64 || imgData.imageUrl) {
+              const imageUrl = imgData.imageUrl || (() => {
+                const isJpeg = imgData.base64.startsWith('/9j/')
+                return `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${imgData.base64}`
+              })()
+              pagesData[pageIdx].imageUrl = imageUrl
+              // Extract base64 for next image's reference (cascade)
+              const commaIndex = imageUrl.indexOf(',')
+              if (commaIndex !== -1) {
+                previousImageBase64 = imageUrl.substring(commaIndex + 1)
+              }
             }
           } else {
             const errText = await imgResponse.text()
             console.error(`Image gen failed for page ${pageIdx + 1}:`, imgResponse.status, errText.substring(0, 200))
+            // If image generation fails, keep previousImageBase64 for next attempt
+            // so the cascade can continue with the last successful image
           }
         } catch (imgErr) {
           console.error(`Image gen error for page ${pageIdx + 1}:`, imgErr)
@@ -301,14 +272,14 @@ export default function CreateBookPage() {
       const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
 
       const book: Book = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         childId: currentChildId!,
         title: data.title || 'My Story',
         pages: pagesData,
         storyStyle,
         genre,
         moral,
-        status: 'approved',
+        status: parentAccount?.requireApproval ? 'draft' : 'approved',
         favorite: false,
         readCount: 0,
         createdAt: new Date().toISOString(),
@@ -330,7 +301,6 @@ export default function CreateBookPage() {
       const emojiIndex = Math.floor(Math.random() * BOOK_COVER_EMOJIS.length)
       const imagePositions = getImagePositions(pageCount, imageCount)
 
-      // Age-appropriate fallback texts
       const childName = currentChild?.name || 'Friend'
       const fallbackTexts: Record<string, string[]> = {
         '3-5': [
@@ -358,11 +328,11 @@ export default function CreateBookPage() {
       const fallbackTextArray = fallbackTexts[ageRange] || fallbackTexts['3-5']
 
       const fallbackBook: Book = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         childId: currentChildId!,
         title: `${childName}'s ${genre} Adventure`,
         pages: Array.from({ length: pageCount }, (_, i) => ({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           pageNumber: i + 1,
           text: fallbackTextArray[i % fallbackTextArray.length],
           imageDescription: `A colorful illustration of ${childName} on page ${i + 1}`,
@@ -372,7 +342,7 @@ export default function CreateBookPage() {
         storyStyle,
         genre,
         moral,
-        status: 'approved',
+        status: parentAccount?.requireApproval ? 'draft' : 'approved',
         favorite: false,
         readCount: 0,
         createdAt: new Date().toISOString(),
@@ -435,7 +405,6 @@ export default function CreateBookPage() {
   }
 
   const maxImageCount = Math.min(10, pageCount)
-  const pagesPerImage = imageCount > 0 ? Math.round(pageCount / imageCount) : 0
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-indigo-50 flex flex-col">
@@ -813,7 +782,7 @@ export default function CreateBookPage() {
                   {drawingPhoto && (
                     <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
                       <p className="text-sm text-green-700">
-                        🎨 Your child&apos;s drawing will be used as the reference for all {imageCount} illustrations. Each image will be generated in the <strong>{nvidiaImageStyle}</strong> style.
+                        🎨 Your child&apos;s drawing will be used as the reference for all {imageCount} illustrations. Each image will be generated in the <strong>{imageStyle}</strong> style.
                       </p>
                     </div>
                   )}
@@ -898,7 +867,7 @@ export default function CreateBookPage() {
                       </div>
                       <div>
                         <p className="text-xs font-medium text-gray-400 uppercase">Illustrations</p>
-                        <p className="text-gray-800 mt-1">{imageCount} images ({nvidiaImageStyle} style)</p>
+                        <p className="text-gray-800 mt-1">{imageCount} images ({imageStyle} style)</p>
                       </div>
                     </div>
                   </div>
@@ -906,7 +875,7 @@ export default function CreateBookPage() {
                   <div className="bg-purple-50 rounded-2xl p-4 border border-purple-100">
                     <p className="text-sm text-purple-700">
                       ✨ Your story will be personalized for <strong>{currentChild?.name || 'your child'}</strong> with age-appropriate
-                      content and {imageCount} beautiful {nvidiaImageStyle} illustrations across {pageCount} pages.
+                      content and {imageCount} beautiful {imageStyle} illustrations across {pageCount} pages.
                       {drawingPhoto && (
                         <span className="block mt-1">
                           🎨 All illustrations will be inspired by the uploaded drawing!
@@ -915,13 +884,14 @@ export default function CreateBookPage() {
                     </p>
                   </div>
 
-                  {nvidiaApiKey && (
+                  {parentAccount?.requireApproval && (
                     <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
                       <p className="text-sm text-amber-700">
-                        🚀 Using NVIDIA API ({nvidiaStoryModel}) for story generation
+                        ⏳ This book will be created as a draft and require parent approval before your child can read it.
                       </p>
                     </div>
                   )}
+
                 </div>
               )}
             </motion.div>

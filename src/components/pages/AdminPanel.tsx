@@ -2,36 +2,23 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ChevronLeft, Send, Activity, DollarSign, Zap, Key, Image, BookOpen, Cpu, Palette, CheckCircle, XCircle } from 'lucide-react'
+import { ChevronLeft, Send, Activity, DollarSign, Zap, Image, BookOpen, Palette, CheckCircle, XCircle } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
-
-const NVIDIA_STORY_MODELS = [
-  { value: 'nvidia/nemotron-3-ultra-550b-a55b', label: 'Nemotron Ultra', description: 'Best - reasoning model for stories' },
-  { value: 'meta/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', description: 'Fast creative writing' },
-  { value: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6', description: 'Alternative creative model' },
-  { value: 'glm-4', label: 'GLM-4', description: 'General purpose model' },
-]
-
-const NVIDIA_IMAGE_MODELS = [
-  { value: '', label: 'None (use built-in)', description: 'Use ZAI SDK image generation (recommended)' },
-  { value: 'stabilityai/stable-diffusion-xl', label: 'SDXL', description: 'Stable Diffusion XL (requires NVIDIA image access)' },
-  { value: 'stabilityai/stable-diffusion-3-medium', label: 'SD3 Medium', description: 'SD3 improved quality (requires NVIDIA image access)' },
-  { value: 'black-forest-labs/flux-1-schnell', label: 'Flux Schnell', description: 'Fast generation (requires NVIDIA image access)' },
-]
 
 const IMAGE_STYLES = [
   { value: 'watercolor', label: 'Watercolor', emoji: '🎨' },
   { value: 'anime', label: 'Anime', emoji: '🎌' },
-  { value: 'mythical', label: 'Mythical', emoji: '✨' },
   { value: 'cartoon', label: 'Cartoon', emoji: '🖍️' },
-  { value: 'realistic', label: 'Realistic', emoji: '📷' },
+  { value: 'digital art', label: 'Digital Art', emoji: '✨' },
+  { value: 'pencil sketch', label: 'Pencil Sketch', emoji: '✏️' },
+  { value: 'oil painting', label: 'Oil Painting', emoji: '🖼️' },
+  { value: '3d render', label: '3D Render', emoji: '🎮' },
+  { value: 'pixel art', label: 'Pixel Art', emoji: '👾' },
 ]
 
 export default function AdminPanel() {
   const {
-    setPage, adminApiKey, setAdminApiKey, adminCallLogs, addAdminCallLog,
-    nvidiaApiKey, setNvidiaApiKey, nvidiaStoryModel, setNvidiaStoryModel,
-    nvidiaImageStyle, setNvidiaImageStyle, nvidiaImageModel, setNvidiaImageModel,
+    setPage, adminCallLogs, addAdminCallLog, imageStyle, setImageStyle,
   } = useAppStore()
 
   const [testPrompt, setTestPrompt] = useState('')
@@ -43,51 +30,42 @@ export default function AdminPanel() {
 
   const totalCalls = adminCallLogs.length
   const totalTokens = adminCallLogs.reduce((sum, log) => sum + log.tokens, 0)
-  const estimatedCost = (totalTokens * 0.00003).toFixed(4)
+  const estimatedCost = (totalTokens * 0.000002).toFixed(4)
 
   const handleTestStory = async () => {
     if (!testPrompt.trim()) return
     setIsLoading(true)
     setResponse('')
 
-    const startTime = Date.now()
-
     try {
-      const requestBody: Record<string, unknown> = {
+      const requestBody = {
         prompt: testPrompt,
         storyStyle: 'Fairy Tale',
         genre: 'adventure',
-        ageRange: '3-5',
+        ageRange: '3-5' as const,
         moral: 'kindness',
         pageCount: 4,
         imageCount: 2,
         childName: 'Test Child',
       }
 
-      let endpoint = '/api/generate-story'
-
-      if (nvidiaApiKey) {
-        endpoint = '/api/nvidia-story'
-        requestBody.apiKey = nvidiaApiKey
-        requestBody.model = nvidiaStoryModel
-      }
-
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/custom-story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       })
 
       const data = await res.json()
-      const duration = Date.now() - startTime
+      const responseText = JSON.stringify(data)
+      const tokens = data.usage?.total_tokens || Math.floor(responseText.length / 4)
 
       setResponse(JSON.stringify(data, null, 2))
 
       addAdminCallLog({
         timestamp: new Date().toISOString(),
         prompt: testPrompt,
-        response: JSON.stringify(data).substring(0, 200),
-        tokens: Math.floor(duration / 100),
+        response: responseText.substring(0, 200),
+        tokens,
       })
     } catch (error) {
       setResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -102,19 +80,12 @@ export default function AdminPanel() {
     setImageResponse('')
 
     try {
-      const requestBody: Record<string, unknown> = {
+      const requestBody = {
         prompt: testImagePrompt,
-        style: nvidiaImageStyle,
+        style: imageStyle,
       }
 
-      let endpoint = '/api/generate-image'
-
-      if (nvidiaApiKey) {
-        endpoint = '/api/nvidia-image'
-        requestBody.apiKey = nvidiaApiKey
-      }
-
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/custom-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -124,6 +95,8 @@ export default function AdminPanel() {
 
       if (data.base64) {
         setImageResponse(`Image generated successfully! Base64 length: ${data.base64.length} chars`)
+      } else if (data.imageUrl) {
+        setImageResponse(`Image generated successfully! URL: ${data.imageUrl.substring(0, 60)}...`)
       } else {
         setImageResponse(JSON.stringify(data, null, 2))
       }
@@ -140,7 +113,7 @@ export default function AdminPanel() {
       <div className="px-4 py-4 border-b border-white/10">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <button
-            onClick={() => setPage('welcome')}
+            onClick={() => setPage('settings')}
             className="text-gray-400 hover:text-white transition-colors"
           >
             <ChevronLeft className="w-6 h-6" />
@@ -180,7 +153,7 @@ export default function AdminPanel() {
             ))}
           </motion.div>
 
-          {/* NVIDIA API Configuration */}
+          {/* Image Style Selector */}
           <motion.div
             className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-5"
             initial={{ opacity: 0, y: 10 }}
@@ -188,157 +161,28 @@ export default function AdminPanel() {
             transition={{ delay: 0.1 }}
           >
             <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <Cpu className="w-5 h-5 text-green-400" />
-              NVIDIA API Configuration
+              <Palette className="w-5 h-5 text-pink-400" />
+              Illustration Style
             </h3>
-
-            {/* API Key */}
-            <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-2 block flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5" />
-                API Key
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={nvidiaApiKey}
-                  onChange={(e) => setNvidiaApiKey(e.target.value)}
-                  placeholder="nvapi-..."
-                  className="flex-1 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-mono placeholder-white/20 focus:outline-none focus:border-green-400/50"
-                />
+            <div className="flex flex-wrap gap-2">
+              {IMAGE_STYLES.map((style) => (
                 <button
-                  onClick={() => setNvidiaApiKey('')}
-                  className="px-3 py-2.5 rounded-xl bg-white/5 text-white/60 text-sm hover:bg-white/10 transition-colors"
+                  key={style.value}
+                  onClick={() => setImageStyle(style.value)}
+                  className={`px-4 py-2.5 rounded-xl text-sm transition-all flex items-center gap-2 ${
+                    imageStyle === style.value
+                      ? 'bg-pink-500/20 border-2 border-pink-400 text-pink-300'
+                      : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+                  }`}
                 >
-                  Clear
+                  <span>{style.emoji}</span>
+                  {style.label}
                 </button>
-              </div>
-              {nvidiaApiKey && (
-                <div className="flex items-center gap-1.5 mt-2 text-xs text-green-400">
-                  <CheckCircle className="w-3 h-3" />
-                  API key set ({nvidiaApiKey.substring(0, 8)}...)
-                </div>
-              )}
-              {!nvidiaApiKey && (
-                <div className="flex items-center gap-1.5 mt-2 text-xs text-amber-400">
-                  <XCircle className="w-3 h-3" />
-                  No API key — using built-in SDK fallback
-                </div>
-              )}
+              ))}
             </div>
-
-            {/* Story Model Selector */}
-            <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-2 block flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5" />
-                Story Generation Model
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {NVIDIA_STORY_MODELS.map((model) => (
-                  <button
-                    key={model.value}
-                    onClick={() => setNvidiaStoryModel(model.value)}
-                    className={`p-3 rounded-xl text-left transition-all ${
-                      nvidiaStoryModel === model.value
-                        ? 'bg-green-500/20 border-2 border-green-400'
-                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
-                    }`}
-                  >
-                    <p className={`text-sm font-medium ${nvidiaStoryModel === model.value ? 'text-green-300' : 'text-white/70'}`}>
-                      {model.label}
-                    </p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">{model.description}</p>
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-1.5">
-                Currently: <span className="text-green-400">{nvidiaStoryModel}</span>
-              </p>
-            </div>
-
-            {/* Image Model Selector */}
-            <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-2 block flex items-center gap-1.5">
-                <Image className="w-3.5 h-3.5" />
-                Image Generation Model
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {NVIDIA_IMAGE_MODELS.map((model) => (
-                  <button
-                    key={model.value}
-                    onClick={() => setNvidiaImageModel(model.value)}
-                    className={`p-3 rounded-xl text-left transition-all ${
-                      nvidiaImageModel === model.value
-                        ? 'bg-green-500/20 border-2 border-green-400'
-                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
-                    }`}
-                  >
-                    <p className={`text-sm font-medium ${nvidiaImageModel === model.value ? 'text-green-300' : 'text-white/70'}`}>
-                      {model.label}
-                    </p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">{model.description}</p>
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-1.5">
-                Currently: <span className="text-green-400">{nvidiaImageModel}</span>
-              </p>
-            </div>
-
-            {/* Image Style Selector */}
-            <div>
-              <label className="text-sm text-gray-400 mb-2 block flex items-center gap-1.5">
-                <Palette className="w-3.5 h-3.5" />
-                Illustration Style
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {IMAGE_STYLES.map((style) => (
-                  <button
-                    key={style.value}
-                    onClick={() => setNvidiaImageStyle(style.value)}
-                    className={`px-4 py-2.5 rounded-xl text-sm transition-all flex items-center gap-2 ${
-                      nvidiaImageStyle === style.value
-                        ? 'bg-green-500/20 border-2 border-green-400 text-green-300'
-                        : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
-                    }`}
-                  >
-                    <span>{style.emoji}</span>
-                    {style.label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-1.5">
-                Currently: <span className="text-green-400">{nvidiaImageStyle}</span>
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Legacy API Key (for reference) */}
-          <motion.div
-            className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-          >
-            <h3 className="font-semibold text-white mb-3 flex items-center gap-2 text-sm">
-              <Key className="w-4 h-4 text-amber-400" />
-              Legacy API Key
-            </h3>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={adminApiKey}
-                onChange={(e) => setAdminApiKey(e.target.value)}
-                placeholder="Legacy key..."
-                className="flex-1 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-mono placeholder-white/20 focus:outline-none focus:border-amber-400/50"
-              />
-              <button
-                onClick={() => setAdminApiKey('')}
-                className="px-3 py-2 rounded-xl bg-white/5 text-white/60 text-sm hover:bg-white/10 transition-colors"
-              >
-                Clear
-              </button>
-            </div>
+            <p className="text-[10px] text-gray-500 mt-1.5">
+              Currently: <span className="text-pink-400">{imageStyle}</span>
+            </p>
           </motion.div>
 
           {/* Test Story Generation */}
@@ -351,11 +195,9 @@ export default function AdminPanel() {
             <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-indigo-400" />
               Test Story Generation
-              {nvidiaApiKey && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
-                  NVIDIA
-                </span>
-              )}
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                DeepInfra
+              </span>
             </h3>
             <textarea
               value={testPrompt}
@@ -396,11 +238,9 @@ export default function AdminPanel() {
             <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
               <Image className="w-4 h-4 text-pink-400" />
               Test Image Generation
-              {nvidiaApiKey && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
-                  NVIDIA
-                </span>
-              )}
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                DeepInfra
+              </span>
             </h3>
             <textarea
               value={testImagePrompt}
@@ -409,7 +249,7 @@ export default function AdminPanel() {
               className="w-full h-20 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder-white/20 focus:outline-none focus:border-pink-400/50 resize-none font-mono"
             />
             <div className="flex items-center gap-2 mt-2 mb-3">
-              <span className="text-xs text-gray-500">Style: {nvidiaImageStyle}</span>
+              <span className="text-xs text-gray-500">Style: {imageStyle}</span>
             </div>
             <button
               onClick={handleTestImage}
@@ -434,56 +274,55 @@ export default function AdminPanel() {
             </button>
           </motion.div>
 
-          {/* Story Response */}
-          {response && (
+          {/* Response display */}
+          {(response || imageResponse) && (
             <motion.div
               className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <h3 className="font-semibold text-white mb-3">Story Response</h3>
-              <pre className="bg-black/30 rounded-xl p-4 text-xs text-green-400 font-mono overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap">
-                {response}
-              </pre>
+              <h3 className="font-semibold text-white mb-2 text-sm">Response</h3>
+              {response && (
+                <pre className="bg-black/30 rounded-xl p-3 text-xs text-green-400 font-mono overflow-x-auto whitespace-pre-wrap mb-2">
+                  {response}
+                </pre>
+              )}
+              {imageResponse && (
+                <pre className="bg-black/30 rounded-xl p-3 text-xs text-pink-400 font-mono overflow-x-auto whitespace-pre-wrap">
+                  {imageResponse}
+                </pre>
+              )}
             </motion.div>
           )}
 
-          {/* Image Response */}
-          {imageResponse && (
-            <motion.div
-              className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <h3 className="font-semibold text-white mb-3">Image Response</h3>
-              <pre className="bg-black/30 rounded-xl p-4 text-xs text-green-400 font-mono overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap">
-                {imageResponse}
-              </pre>
-            </motion.div>
-          )}
-
-          {/* Call logs */}
-          {adminCallLogs.length > 0 && (
-            <motion.div
-              className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <h3 className="font-semibold text-white mb-3">API Call Logs</h3>
-              <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
-                {[...adminCallLogs].reverse().map((log, i) => (
-                  <div key={i} className="bg-black/20 rounded-xl p-3 text-xs font-mono">
+          {/* Call Logs */}
+          <motion.div
+            className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-blue-400" />
+              Recent Call Logs
+            </h3>
+            {adminCallLogs.length === 0 ? (
+              <p className="text-sm text-gray-500">No API calls yet. Run a test to see logs.</p>
+            ) : (
+              <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                {adminCallLogs.slice().reverse().map((log, i) => (
+                  <div key={i} className="bg-white/5 rounded-xl p-3 text-sm">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-amber-400">{new Date(log.timestamp).toLocaleString()}</span>
-                      <span className="text-white/40">{log.tokens} tokens</span>
+                      <span className="text-gray-400 text-xs">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      <span className="text-xs text-blue-400">{log.tokens} tokens</span>
                     </div>
-                    <p className="text-white/60 truncate">{log.prompt}</p>
-                    <p className="text-green-400/50 truncate mt-1">{log.response.substring(0, 100)}...</p>
+                    <p className="text-white/70 truncate">{log.prompt}</p>
+                    <p className="text-gray-500 text-xs truncate mt-0.5">{log.response}</p>
                   </div>
                 ))}
               </div>
-            </motion.div>
-          )}
+            )}
+          </motion.div>
         </div>
       </div>
     </div>

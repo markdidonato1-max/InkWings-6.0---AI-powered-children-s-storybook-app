@@ -98,7 +98,7 @@ Agent: Main Agent
 Task: Configure NVIDIA API key and Nemotron model for story + image generation
 
 Work Log:
-- Set NVIDIA API key as default in store: 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
+- Set NVIDIA API key as default in store: [REDACTED — removed in subsequent cleanup]
 - Set default story model to nvidia/nemotron-3-ultra-550b-a55b (Nemotron Ultra)
 - Updated nvidia-story API route with Nemotron-specific parameters:
   - reasoning_effort: "high"

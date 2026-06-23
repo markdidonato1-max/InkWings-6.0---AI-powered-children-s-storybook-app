@@ -2,6 +2,10 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { hashPasscode, verifyPasscode, generateUUID } from './utils'
+import { getImagePositions } from './image-utils'
+
+export { getImagePositions } // Re-export for convenience
 
 // ─── Data Models ───────────────────────────────────────────────
 
@@ -10,9 +14,11 @@ export interface ParentAccount {
   name: string
   email: string
   authMethod: 'apple' | 'google' | 'passcode'
-  passcode: string
+  passcode: string // NOTE: this is a HASH, not the raw passcode
   children: ChildProfile[]
   subscription: { status: 'active' | 'expired' | 'trial'; expiryDate: string }
+  requireApproval: boolean
+  blockMatureContent: boolean
   createdAt: string
 }
 
@@ -39,6 +45,7 @@ export interface ChildProfile {
     newWords: string[]
     wordHistory: { word: string; date: string; context: string }[]
   }
+  readingTimeLimit: number // minutes per day, 0 = no limit
   rememberMe: boolean
   createdAt: string
 }
@@ -65,6 +72,7 @@ export interface Book {
   favorite: boolean
   readCount: number
   lastReadAt?: string
+  lastReadPage?: number // Track where user left off
   createdAt: string
   coverGradient?: string
   coverEmoji?: string
@@ -120,18 +128,15 @@ interface AppState {
     drawingPhoto: string | null
   } | null
 
-  // Admin
-  adminApiKey: string
-  adminCallLogs: { timestamp: string; prompt: string; response: string; tokens: number }[]
+  // Image style preference (user-facing, not an API key)
+  imageStyle: string
 
-  // NVIDIA API
-  nvidiaApiKey: string
-  nvidiaStoryModel: string
-  nvidiaImageStyle: string
-  nvidiaImageModel: string
+  // Admin call logs (for stats display)
+  adminCallLogs: { timestamp: string; prompt: string; response: string; tokens: number }[]
 
   // Actions
   setPage: (page: PageName) => void
+  goBack: () => void
   setLegalPageType: (type: 'terms' | 'privacy' | 'coppa') => void
   setAuthenticated: (value: boolean) => void
   setParentAccount: (account: ParentAccount) => void
@@ -156,20 +161,17 @@ interface AppState {
   toggleFavorite: (id: string) => void
   incrementReadCount: (id: string) => void
 
-  // Admin
-  setAdminApiKey: (key: string) => void
-  addAdminCallLog: (log: { timestamp: string; prompt: string; response: string; tokens: number }) => void
+  // Image style
+  setImageStyle: (style: string) => void
 
-  // NVIDIA
-  setNvidiaApiKey: (key: string) => void
-  setNvidiaStoryModel: (model: string) => void
-  setNvidiaImageStyle: (style: string) => void
-  setNvidiaImageModel: (model: string) => void
+  // Admin
+  addAdminCallLog: (log: { timestamp: string; prompt: string; response: string; tokens: number }) => void
 
   // Helpers
   getCurrentChild: () => ChildProfile | null
   getCurrentBook: () => Book | null
   getBooksForChild: (childId: string) => Book[]
+  verifyPasscode: (input: string) => boolean
 }
 
 export const useAppStore = create<AppState>()(
@@ -192,13 +194,8 @@ export const useAppStore = create<AppState>()(
       createBookStep: 0,
       createBookData: null,
 
-      adminApiKey: '',
+      imageStyle: 'watercolor',
       adminCallLogs: [],
-
-      nvidiaApiKey: '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',
-      nvidiaStoryModel: 'qwen/qwen3.5-122b-a10b',
-      nvidiaImageStyle: 'watercolor',
-      nvidiaImageModel: '', // No default — NVIDIA image models require separate subscription
 
       // Navigation
       setPage: (page) =>
@@ -207,12 +204,32 @@ export const useAppStore = create<AppState>()(
           currentPage: page,
         })),
 
+      goBack: () =>
+        set((state) => {
+          const prev = state.previousPage
+          if (prev) {
+            return {
+              previousPage: state.currentPage,
+              currentPage: prev,
+            }
+          }
+          return state
+        }),
+
       setLegalPageType: (type) => set({ legalPageType: type }),
 
       setAuthenticated: (value) => set({ isAuthenticated: value }),
 
-      setParentAccount: (account) =>
-        set({ parentAccount: account, isAuthenticated: true }),
+      setParentAccount: (account) => {
+        // Hash the passcode if it's a raw 4-digit string (not already hashed)
+        const rawPasscode = account.passcode
+        const isAlreadyHashed = rawPasscode.length > 4 || !/^\d{4}$/.test(rawPasscode)
+        const hashedPasscode = isAlreadyHashed ? rawPasscode : hashPasscode(rawPasscode)
+        return set({
+          parentAccount: { ...account, passcode: hashedPasscode },
+          isAuthenticated: true,
+        })
+      },
 
       updateParentAccount: (updates) =>
         set((state) => ({
@@ -270,6 +287,10 @@ export const useAppStore = create<AppState>()(
               }
             : null,
           currentChildId: state.currentChildId === id ? null : state.currentChildId,
+          books: state.books.filter((b) => b.childId !== id),
+          currentBookId: state.books.some((b) => b.id === state.currentBookId && b.childId === id)
+            ? null
+            : state.currentBookId,
         })),
 
       // Book management
@@ -294,24 +315,63 @@ export const useAppStore = create<AppState>()(
         })),
 
       incrementReadCount: (id) =>
-        set((state) => ({
-          books: state.books.map((b) =>
+        set((state) => {
+          const book = state.books.find((b) => b.id === id)
+          if (!book) return state
+
+          const updatedBooks = state.books.map((b) =>
             b.id === id
               ? { ...b, readCount: b.readCount + 1, lastReadAt: new Date().toISOString() }
               : b
-          ),
-        })),
+          )
+
+          // Also update the child's reading stats
+          let updatedParent = state.parentAccount
+          if (updatedParent && state.currentChildId) {
+            updatedParent = {
+              ...updatedParent,
+              children: updatedParent.children.map((c) =>
+                c.id === state.currentChildId
+                  ? {
+                      ...c,
+                      readingStats: {
+                        ...c.readingStats,
+                        totalBooksRead: c.readingStats.totalBooksRead + 1,
+                        totalPagesRead: c.readingStats.totalPagesRead + book.pages.length,
+                        totalReadingTimeMinutes: c.readingStats.totalReadingTimeMinutes + 5, // rough estimate
+                        averageSessionMinutes:
+                          c.readingStats.totalBooksRead > 0
+                            ? Math.round(
+                                (c.readingStats.totalReadingTimeMinutes + 5) /
+                                  (c.readingStats.totalBooksRead + 1)
+                              )
+                            : 5,
+                      },
+                    }
+                  : c
+              ),
+            }
+          }
+
+          return {
+            books: updatedBooks,
+            parentAccount: updatedParent,
+          }
+        }),
+
+      // Image style
+      setImageStyle: (style) => set({ imageStyle: style }),
 
       // Admin
-      setAdminApiKey: (key) => set({ adminApiKey: key }),
       addAdminCallLog: (log) =>
-        set((state) => ({ adminCallLogs: [...state.adminCallLogs, log] })),
-
-      // NVIDIA
-      setNvidiaApiKey: (key) => set({ nvidiaApiKey: key }),
-      setNvidiaStoryModel: (model) => set({ nvidiaStoryModel: model }),
-      setNvidiaImageStyle: (style) => set({ nvidiaImageStyle: style }),
-      setNvidiaImageModel: (model) => set({ nvidiaImageModel: model }),
+        set((state) => {
+          const logs = [...state.adminCallLogs, log]
+          // Cap at 100 entries to prevent unbounded localStorage growth
+          if (logs.length > 100) {
+            logs.splice(0, logs.length - 100)
+          }
+          return { adminCallLogs: logs }
+        }),
 
       // Helpers
       getCurrentChild: () => {
@@ -330,6 +390,12 @@ export const useAppStore = create<AppState>()(
         const state = get()
         return state.books.filter((b) => b.childId === childId)
       },
+
+      verifyPasscode: (input) => {
+        const state = get()
+        if (!state.parentAccount) return false
+        return verifyPasscode(input, state.parentAccount.passcode)
+      },
     }),
     {
       name: 'inkwings-storage',
@@ -340,31 +406,42 @@ export const useAppStore = create<AppState>()(
         mode: state.mode,
         books: state.books,
         currentPage: state.currentPage,
-        adminApiKey: state.adminApiKey,
+        imageStyle: state.imageStyle,
         adminCallLogs: state.adminCallLogs,
-        nvidiaApiKey: state.nvidiaApiKey,
-        nvidiaStoryModel: state.nvidiaStoryModel,
-        nvidiaImageStyle: state.nvidiaImageStyle,
-        nvidiaImageModel: state.nvidiaImageModel,
       }),
       // Migration: clear stale/invalid config values when loading from localStorage
       merge: (persistedState: unknown, currentState: unknown) => {
         const p = persistedState as Record<string, unknown>
         const c = currentState as Record<string, unknown>
         const merged = { ...c, ...p }
-        // Clear invalid NVIDIA image model — these models require separate subscription
-        // and returning 404 wastes 5-10 seconds on every image generation attempt
-        if (merged.nvidiaImageModel === 'stabilityai/stable-diffusion-xl') {
-          merged.nvidiaImageModel = ''
+
+        // Migrate old nvidiaImageStyle to new imageStyle
+        if (merged.nvidiaImageStyle && !merged.imageStyle) {
+          merged.imageStyle = merged.nvidiaImageStyle
         }
-        // Migrate old Nemotron model to Qwen 3.5 (faster, better structured output)
-        if (merged.nvidiaStoryModel === 'nvidia/nemotron-3-ultra-550b-a55b') {
-          merged.nvidiaStoryModel = 'qwen/qwen3.5-122b-a10b'
+
+        // Migrate raw 4-digit passcodes to hashed
+        if (merged.parentAccount && typeof merged.parentAccount === 'object') {
+          const pa = merged.parentAccount as Record<string, unknown>
+          if (typeof pa.passcode === 'string' && pa.passcode.length === 4 && /^\d{4}$/.test(pa.passcode)) {
+            pa.passcode = hashPasscode(pa.passcode)
+          }
+          // Add requireApproval and blockMatureContent if missing
+          if (pa.requireApproval === undefined) {
+            pa.requireApproval = false
+          }
+          if (pa.blockMatureContent === undefined) {
+            pa.blockMatureContent = true
+          }
+          // Add readingTimeLimit to children if missing
+          if (Array.isArray(pa.children)) {
+            pa.children = pa.children.map((child: Record<string, unknown>) => ({
+              ...child,
+              readingTimeLimit: (child.readingTimeLimit as number) ?? 0,
+            }))
+          }
         }
-        // Migrate old/expired API keys to the current one
-        if (merged.nvidiaApiKey === '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') {
-          merged.nvidiaApiKey = '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'
-        }
+
         // Fix any existing book images with wrong MIME type (JPEG data labeled as PNG)
         if (Array.isArray(merged.books)) {
           merged.books = (merged.books as Book[]).map((book: Book) => ({
@@ -378,6 +455,24 @@ export const useAppStore = create<AppState>()(
             })),
           }))
         }
+
+        // Cap adminCallLogs if they somehow grew past the limit
+        if (Array.isArray(merged.adminCallLogs) && merged.adminCallLogs.length > 100) {
+          merged.adminCallLogs = merged.adminCallLogs.slice(-100)
+        }
+
+        // Remove any old API key fields that might have been persisted
+        delete merged.nvidiaApiKey
+        delete merged.nvidiaStoryModel
+        delete merged.nvidiaImageModel
+        delete merged.customApiBaseUrl
+        delete merged.customApiKey
+        delete merged.customStoryModel
+        delete merged.customImageModel
+        delete merged.customApiProvider
+        delete merged.adminApiKey
+        delete merged.nvidiaImageStyle
+
         return merged
       },
     }

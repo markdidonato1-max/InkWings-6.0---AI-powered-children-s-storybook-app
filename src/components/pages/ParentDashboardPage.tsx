@@ -1,10 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronLeft, LogOut, BookOpen, Clock, GraduationCap, Shield, Settings,
-  Users, Repeat, Check, X, Timer, Eye
+  Users, Repeat, Check, X, Timer, Eye, BookMarked, Trash2, Download
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 
@@ -13,10 +13,16 @@ type TabKey = 'overview' | 'children' | 'settings' | 'controls'
 export default function ParentDashboardPage() {
   const {
     parentAccount, books, setPage, setMode, setCurrentChildId, clearParentAccount,
-    updateBook, updateChild
+    updateBook, updateChild, updateParentAccount
   } = useAppStore()
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [parentNotifications, setParentNotifications] = useState({
+    readingReminders: true,
+    newStoryAlerts: true,
+    weeklySummary: false,
+  })
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const children = parentAccount?.children || []
   const allBooks = books
@@ -26,6 +32,10 @@ export default function ParentDashboardPage() {
   const totalWords = children.reduce((sum, c) => sum + c.vocabularyProgress.totalWordsLearned, 0)
   const pendingBooks = allBooks.filter((b) => b.status === 'draft')
 
+  // Controlled inputs for settings tab
+  const [editName, setEditName] = useState(parentAccount?.name || '')
+  const [editEmail, setEditEmail] = useState(parentAccount?.email || '')
+
   const handleSwitchToChildMode = () => {
     if (children.length === 1) {
       setCurrentChildId(children[0].id)
@@ -34,6 +44,31 @@ export default function ParentDashboardPage() {
     } else if (children.length > 1) {
       setPage('select-child')
     }
+  }
+
+  const handleExportData = () => {
+    const data = {
+      parentAccount,
+      books,
+      exportDate: new Date().toISOString(),
+      appVersion: '1.0.0',
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `inkwings-export-${new Date().toISOString().split('T')[0]}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleClearData = () => {
+    clearParentAccount()
+    setShowClearConfirm(false)
+  }
+
+  const handleSaveSettings = () => {
+    updateParentAccount({ name: editName, email: editEmail })
   }
 
   const tabs: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
@@ -107,7 +142,7 @@ export default function ParentDashboardPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: 'Total Books', value: totalBooks, icon: BookOpen, color: 'from-indigo-500/20 to-indigo-600/20' },
-                  { label: 'Pages Read', value: totalPages, icon: BookOpen, color: 'from-purple-500/20 to-purple-600/20' },
+                  { label: 'Pages Read', value: totalPages, icon: BookMarked, color: 'from-purple-500/20 to-purple-600/20' },
                   { label: 'Reading Time', value: `${totalReadingTime}m`, icon: Clock, color: 'from-pink-500/20 to-pink-600/20' },
                   { label: 'Words Learned', value: totalWords, icon: GraduationCap, color: 'from-emerald-500/20 to-emerald-600/20' },
                 ].map((stat) => (
@@ -165,7 +200,9 @@ export default function ParentDashboardPage() {
                   <div>
                     <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${
                       parentAccount?.subscription.status === 'active'
-                        ? 'bg-green-500/20 text-green-400'
+                        ? parentAccount?.subscription.expiryDate === '2099-12-31T23:59:59Z'
+                          ? 'bg-purple-500/20 text-purple-400'
+                          : 'bg-green-500/20 text-green-400'
                         : parentAccount?.subscription.status === 'trial'
                           ? 'bg-amber-500/20 text-amber-400'
                           : 'bg-red-500/20 text-red-400'
@@ -175,7 +212,11 @@ export default function ParentDashboardPage() {
                   </div>
                   <p className="text-xs text-white/40">
                     {parentAccount?.subscription.status === 'trial' && 'Expires ' + new Date(parentAccount.subscription.expiryDate).toLocaleDateString()}
-                    {parentAccount?.subscription.status === 'active' && 'Renews automatically'}
+                    {parentAccount?.subscription.status === 'active' && (
+                      <>
+                        {parentAccount?.subscription.expiryDate === '2099-12-31T23:59:59Z' ? 'Free Forever 🎉' : 'Renews automatically'}
+                      </>
+                    )}
                     {parentAccount?.subscription.status === 'expired' && 'Subscribe to continue creating stories'}
                   </p>
                 </div>
@@ -258,8 +299,13 @@ export default function ParentDashboardPage() {
                       <p className="text-xs text-white/40">Review stories before children can read them</p>
                     </div>
                     <label className="relative inline-flex cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5"></div>
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={parentAccount?.requireApproval ?? false}
+                        onChange={(e) => updateParentAccount({ requireApproval: e.target.checked })}
+                      />
+                      <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5" />
                     </label>
                   </div>
 
@@ -269,8 +315,13 @@ export default function ParentDashboardPage() {
                       <p className="text-xs text-white/40">Automatically filter inappropriate content</p>
                     </div>
                     <label className="relative inline-flex cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5"></div>
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={parentAccount?.blockMatureContent ?? true}
+                        onChange={(e) => updateParentAccount({ blockMatureContent: e.target.checked })}
+                      />
+                      <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5" />
                     </label>
                   </div>
                 </div>
@@ -289,12 +340,16 @@ export default function ParentDashboardPage() {
                       <span>{child.avatar}</span>
                       <span className="text-sm text-white">{child.name}</span>
                     </div>
-                    <select className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-white/70 focus:outline-none focus:border-indigo-400">
-                      <option value="0">No limit</option>
-                      <option value="15">15 min/day</option>
-                      <option value="30">30 min/day</option>
-                      <option value="45">45 min/day</option>
-                      <option value="60">60 min/day</option>
+                    <select
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-white/70 focus:outline-none focus:border-indigo-400"
+                      value={child.readingTimeLimit}
+                      onChange={(e) => updateChild(child.id, { readingTimeLimit: parseInt(e.target.value) })}
+                    >
+                      <option value={0}>No limit</option>
+                      <option value={15}>15 min/day</option>
+                      <option value={30}>30 min/day</option>
+                      <option value={45}>45 min/day</option>
+                      <option value={60}>60 min/day</option>
                     </select>
                   </div>
                 ))}
@@ -304,10 +359,18 @@ export default function ParentDashboardPage() {
               <div className="rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-4">
                 <h3 className="font-semibold text-white mb-3">Data Management</h3>
                 <div className="space-y-2">
-                  <button className="w-full py-2.5 rounded-xl bg-white/5 text-white/70 text-sm hover:bg-white/10 transition-colors">
+                  <button
+                    onClick={handleExportData}
+                    className="w-full py-2.5 rounded-xl bg-white/5 text-white/70 text-sm hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
                     Export All Data
                   </button>
-                  <button className="w-full py-2.5 rounded-xl bg-red-500/10 text-red-400 text-sm hover:bg-red-500/20 transition-colors">
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="w-full py-2.5 rounded-xl bg-red-500/10 text-red-400 text-sm hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
                     Clear All Data
                   </button>
                 </div>
@@ -329,7 +392,8 @@ export default function ParentDashboardPage() {
                     <label className="text-xs text-white/40 block mb-1">Name</label>
                     <input
                       type="text"
-                      defaultValue={parentAccount?.name}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-400"
                     />
                   </div>
@@ -337,10 +401,17 @@ export default function ParentDashboardPage() {
                     <label className="text-xs text-white/40 block mb-1">Email</label>
                     <input
                       type="email"
-                      defaultValue={parentAccount?.email}
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-400"
                     />
                   </div>
+                  <button
+                    onClick={handleSaveSettings}
+                    className="w-full py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 transition-colors"
+                  >
+                    Save Changes
+                  </button>
                 </div>
               </div>
 
@@ -348,9 +419,9 @@ export default function ParentDashboardPage() {
                 <h3 className="font-semibold text-white mb-3">Notifications</h3>
                 <div className="space-y-3">
                   {[
-                    { label: 'Reading reminders', desc: 'Daily reminder to read' },
-                    { label: 'New story alerts', desc: 'When a story is generated' },
-                    { label: 'Weekly summary', desc: 'Reading stats summary' },
+                    { label: 'Reading reminders', desc: 'Daily reminder to read', key: 'readingReminders' as const },
+                    { label: 'New story alerts', desc: 'When a story is generated', key: 'newStoryAlerts' as const },
+                    { label: 'Weekly summary', desc: 'Reading stats summary', key: 'weeklySummary' as const },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center justify-between">
                       <div>
@@ -358,8 +429,13 @@ export default function ParentDashboardPage() {
                         <p className="text-xs text-white/40">{item.desc}</p>
                       </div>
                       <label className="relative inline-flex cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" defaultChecked />
-                        <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5"></div>
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={parentNotifications[item.key]}
+                          onChange={(e) => setParentNotifications((prev) => ({ ...prev, [item.key]: e.target.checked }))}
+                        />
+                        <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5" />
                       </label>
                     </div>
                   ))}
@@ -374,7 +450,10 @@ export default function ParentDashboardPage() {
                       <p className="text-sm text-white">Change Passcode</p>
                       <p className="text-xs text-white/40">Update your 4-digit passcode</p>
                     </div>
-                    <button className="px-3 py-1.5 rounded-xl bg-white/5 text-white/60 text-sm hover:bg-white/10 transition-colors">
+                    <button
+                      onClick={() => setPage('settings')}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 text-white/60 text-sm hover:bg-white/10 transition-colors"
+                    >
                       Change
                     </button>
                   </div>
@@ -384,8 +463,8 @@ export default function ParentDashboardPage() {
                       <p className="text-xs text-white/40">Use Face ID for authentication</p>
                     </div>
                     <label className="relative inline-flex cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" />
-                      <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5"></div>
+                      <input type="checkbox" className="sr-only peer" disabled />
+                      <div className="w-10 h-5 bg-white/10 peer-checked:bg-indigo-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-5 opacity-50" />
                     </label>
                   </div>
                 </div>
@@ -430,6 +509,51 @@ export default function ParentDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Clear Data Confirmation Dialog */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setShowClearConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-xl border border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-3">
+                  <Trash2 className="w-6 h-6 text-red-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white">Delete All Data?</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  This will permanently remove all accounts, children, books, and settings. This action cannot be undone.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-medium hover:bg-white/15 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleClearData}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+                >
+                  Delete Everything
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

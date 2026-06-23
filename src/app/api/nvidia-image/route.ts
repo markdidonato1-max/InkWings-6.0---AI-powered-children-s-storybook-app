@@ -15,7 +15,12 @@ const STYLE_PROMPTS: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    const { prompt, style, apiKey, referenceImage, model } = await request.json()
+    const { prompt, style, referenceImage } = await request.json()
+
+    // Backend-only API configuration (never exposed to frontend)
+    const apiKey = process.env.DEEPINFRA_API_KEY
+    const baseUrl = process.env.DEEPINFRA_BASE_URL || 'https://api.deepinfra.com/v1/openai'
+    const model = process.env.DEEPINFRA_IMAGE_MODEL || 'black-forest-labs/FLUX-1-schnell'
 
     const selectedStyle = style || 'watercolor'
     const stylePrompt = STYLE_PROMPTS[selectedStyle] || STYLE_PROMPTS.watercolor
@@ -61,66 +66,78 @@ export async function POST(request: Request) {
     // Most NVIDIA API keys only have text/chat models, not image generation models
     // Only attempt NVIDIA if a specific image model is provided (not text models)
     if (apiKey && model && !model.includes('nemotron') && !model.includes('llama') && !model.includes('kimi') && !model.includes('glm')) {
-      try {
-        console.log(`[nvidia-image] Trying NVIDIA model as fallback: ${model}`)
+      console.log(`[nvidia-image] Trying NVIDIA model as fallback: ${model}`)
 
-        const nvidiaBody: Record<string, unknown> = {
-          model: model,
-          prompt: fullPrompt,
-        }
-
-        // Different models use different size parameters
-        if (model.includes('flux')) {
-          nvidiaBody.dimensions = '1024x1024'
-          nvidiaBody.steps = 4
-        } else {
-          nvidiaBody.size = '1024x1024'
-          nvidiaBody.cfg_scale = 7
-          nvidiaBody.steps = 30
-        }
-
-        if (referenceImage) {
-          nvidiaBody.image = referenceImage
-          nvidiaBody.strength = 0.7
-        }
-
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 45000) // 45s timeout
-
-        const response = await fetch('https://integrate.api.nvidia.com/v1/images/generations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(nvidiaBody),
-          signal: controller.signal,
-        })
-
-        clearTimeout(timeout)
-
-        if (response.ok) {
-          const data = await response.json()
-          if (data.data?.[0]?.b64_json) {
-            console.log(`[nvidia-image] Success via NVIDIA fallback (${model})`)
-            return Response.json({ base64: data.data[0].b64_json })
-          }
-          if (data.data?.[0]?.url) {
-            const imgResponse = await fetch(data.data[0].url)
-            if (imgResponse.ok) {
-              const arrayBuffer = await imgResponse.arrayBuffer()
-              const base64 = Buffer.from(arrayBuffer).toString('base64')
-              return Response.json({ base64 })
-            }
-          }
-        } else {
-          const errorText = await response.text().catch(() => '')
-          console.log(`[nvidia-image] NVIDIA API returned ${response.status}: ${errorText.substring(0, 200)}`)
-        }
-      } catch (nvidiaError: unknown) {
-        const msg = nvidiaError instanceof Error ? nvidiaError.message : String(nvidiaError)
-        console.log(`[nvidia-image] NVIDIA fallback failed: ${msg}`)
+      const nvidiaBody: Record<string, unknown> = {
+        model: model,
+        prompt: fullPrompt,
       }
+
+      // Different models use different size parameters
+      if (model.includes('flux')) {
+        nvidiaBody.dimensions = '1024x1024'
+        nvidiaBody.steps = 4
+      } else {
+        nvidiaBody.size = '1024x1024'
+        nvidiaBody.cfg_scale = 7
+        nvidiaBody.steps = 30
+      }
+
+      if (referenceImage) {
+        nvidiaBody.image = referenceImage
+        nvidiaBody.strength = 0.7
+      }
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 45000) // 45s timeout
+
+      try {
+          const response = await fetch('https://integrate.api.nvidia.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(nvidiaBody),
+            signal: controller.signal,
+          })
+
+          clearTimeout(timeout)
+
+          if (response.ok) {
+            const data = await response.json()
+            if (data.data?.[0]?.b64_json) {
+              console.log(`[nvidia-image] Success via NVIDIA fallback (${model})`)
+              return Response.json({ base64: data.data[0].b64_json })
+            }
+            if (data.data?.[0]?.url) {
+              const imgResponse = await fetch(data.data[0].url)
+              if (imgResponse.ok) {
+                const arrayBuffer = await imgResponse.arrayBuffer()
+                const base64 = Buffer.from(arrayBuffer).toString('base64')
+                return Response.json({ base64 })
+              }
+            }
+          } else {
+            const errorText = await response.text().catch(() => '')
+            console.log(`[nvidia-image] NVIDIA API returned ${response.status}: ${errorText.substring(0, 200)}`)
+          }
+        } catch (nvidiaError: unknown) {
+          clearTimeout(timeout)
+          const msg = nvidiaError instanceof Error ? nvidiaError.message : String(nvidiaError)
+          console.log(`[nvidia-image] NVIDIA fallback failed: ${msg}`)
+        }
+    }
+
+    // ── Dev fallback: generate a colored placeholder image if all APIs fail ──
+    // This ensures the app works even without API keys configured
+    try {
+      const { createPlaceholderImage } = await import('@/lib/placeholder-image')
+      const base64 = await createPlaceholderImage(prompt, selectedStyle)
+      console.log(`[nvidia-image] Dev fallback: generated placeholder image (${base64.length} chars)`)
+      return Response.json({ imageUrl: `data:image/svg+xml;base64,${base64}` })
+    } catch (placeholderError) {
+      console.error('[nvidia-image] Placeholder fallback also failed:', placeholderError)
     }
 
     // All methods failed

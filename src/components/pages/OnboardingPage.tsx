@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Check, UserPlus, Baby, Lock, Settings, Shield } from 'lucide-react'
 import { useAppStore, AVATARS, AGE_RANGES, STORY_STYLES, GENRES, MORALS, type ChildProfile } from '@/lib/store'
+import { generateUUID } from '@/lib/utils'
 
 const STEPS = [
   { label: 'Parent Profile', icon: UserPlus },
@@ -14,7 +15,8 @@ const STEPS = [
 ]
 
 export default function OnboardingPage() {
-  const { setPage, setParentAccount, setMode, setCurrentChildId, onboardingStep, setOnboardingStep } = useAppStore()
+  const { setPage, setParentAccount, setMode, setCurrentChildId, onboardingStep, setOnboardingStep, parentAccount } = useAppStore()
+  const isAddingChild = !!parentAccount
 
   const [parentName, setParentName] = useState('')
   const [parentEmail, setParentEmail] = useState('')
@@ -36,9 +38,32 @@ export default function OnboardingPage() {
   const [defaultGenre, setDefaultGenre] = useState('')
   const [defaultMoral, setDefaultMoral] = useState('none')
 
+  const [promoCode, setPromoCode] = useState('')
+  const [promoCodeApplied, setPromoCodeApplied] = useState(false)
+  const [promoCodeError, setPromoCodeError] = useState('')
+  const [showPromoInput, setShowPromoInput] = useState(false)
+
   const [coppaAgreed, setCoppaAgreed] = useState(false)
 
   const step = onboardingStep
+
+  const handlePromoCodeCheck = () => {
+    const trimmed = promoCode.trim().toUpperCase()
+    if (trimmed === 'FFLINKWINGS') {
+      setPromoCodeApplied(true)
+      setPromoCodeError('')
+    } else if (trimmed !== '') {
+      setPromoCodeApplied(false)
+      setPromoCodeError('Invalid promo code. Try again.')
+    }
+  }
+
+  // Auto-skip parent profile and passcode when adding a child
+  useEffect(() => {
+    if (isAddingChild && step < 2) {
+      setOnboardingStep(2)
+    }
+  }, [isAddingChild, step, setOnboardingStep])
 
   const canProceed = () => {
     if (step === 0) return parentName.trim() !== '' && parentEmail.trim() !== ''
@@ -57,40 +82,74 @@ export default function OnboardingPage() {
       const validChildren = children
         .filter((c) => c.name?.trim() !== '')
         .map((c) => ({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           name: c.name || '',
           ageRange: c.ageRange || '3-5',
           avatar: c.avatar || '🦊',
-          preferences: c.preferences || { favoriteGenres: [], favoriteStyles: [], preferredMoral: 'none' },
+          preferences: {
+            favoriteGenres: defaultGenre ? [defaultGenre] : [],
+            favoriteStyles: defaultStyle ? [defaultStyle] : [],
+            preferredMoral: defaultMoral,
+          },
           readingStats: { totalBooksRead: 0, totalPagesRead: 0, totalReadingTimeMinutes: 0, averageSessionMinutes: 0 },
           vocabularyProgress: { totalWordsLearned: 0, masteredWords: [], learningWords: [], newWords: [], wordHistory: [] },
+          readingTimeLimit: 0,
           rememberMe: false,
           createdAt: new Date().toISOString(),
         }))
 
-      const parentAccount = {
-        id: crypto.randomUUID(),
-        name: parentName,
-        email: parentEmail,
-        authMethod,
-        passcode: confirmedPasscode,
-        children: validChildren,
-        subscription: { status: 'trial' as const, expiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() },
-        createdAt: new Date().toISOString(),
-      }
+      if (isAddingChild && parentAccount) {
+        // Adding a child to existing account
+        const existingChildren = parentAccount.children
+        const allChildren = [...existingChildren, ...validChildren]
+        const updates = {
+          children: allChildren,
+        }
+        useAppStore.getState().updateParentAccount(updates)
+        if (validChildren.length > 0) {
+          setCurrentChildId(validChildren[0].id)
+        }
+        setMode('child')
+        setPage('child-home')
+      } else {
+        // First-time onboarding
+        const subscription = promoCodeApplied
+          ? { status: 'active' as const, expiryDate: '2099-12-31T23:59:59Z' }
+          : { status: 'trial' as const, expiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() }
 
-      setParentAccount(parentAccount)
-      if (validChildren.length > 0) {
-        setCurrentChildId(validChildren[0].id)
+        const parentAccount = {
+          id: generateUUID(),
+          name: parentName,
+          email: parentEmail,
+          authMethod,
+          passcode: confirmedPasscode,
+          children: validChildren,
+          subscription,
+          requireApproval: false,
+          blockMatureContent: true,
+          createdAt: new Date().toISOString(),
+        }
+
+        setParentAccount(parentAccount)
+        if (validChildren.length > 0) {
+          setCurrentChildId(validChildren[0].id)
+        }
+        setMode('child')
+        setPage('child-home')
       }
-      setMode('child')
-      setPage('child-home')
     }
   }
 
   const handleBack = () => {
-    if (step > 0) setOnboardingStep(step - 1)
-    else setPage('welcome')
+    if (step > 0) {
+      setOnboardingStep(step - 1)
+    } else {
+      if (isAddingChild) {
+        setPage('select-child')
+      } else {
+        setPage('welcome')
+      }
+    }
   }
 
   const addChild = () => {
@@ -134,7 +193,7 @@ export default function OnboardingPage() {
           setConfirmedPasscode(newConfirm)
         } else {
           // Shake and reset
-          setPasscodeError('Passcodes don\'t match. Try again.')
+          setPasscodeError("Passcodes don't match. Try again.")
           setPasscodeShakeKey((k) => k + 1)
           setTimeout(() => {
             setPasscodeEntry('')
@@ -178,29 +237,35 @@ export default function OnboardingPage() {
           <button onClick={handleBack} className="text-purple-300 hover:text-white transition-colors">
             <ChevronLeft className="w-6 h-6" />
           </button>
-          <h1 className="text-xl font-bold text-white">Set Up InkWings</h1>
+          <h1 className="text-xl font-bold text-white">
+            {isAddingChild ? 'Add a Child' : 'Set Up InkWings'}
+          </h1>
         </div>
 
-        {/* Progress indicator */}
+        {/* Progress indicator - hide first 2 steps when adding child */}
         <div className="flex items-center gap-2 mb-8">
-          {STEPS.map((s, i) => (
-            <div key={i} className="flex items-center gap-2 flex-1">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
-                  i < step
-                    ? 'bg-indigo-500 text-white'
-                    : i === step
-                      ? 'bg-indigo-500/30 border-2 border-indigo-400 text-indigo-300'
-                      : 'bg-white/10 text-white/40'
-                }`}
-              >
-                {i < step ? <Check className="w-4 h-4" /> : i + 1}
+          {STEPS.map((s, i) => {
+            // Skip first 2 steps visually when adding a child
+            if (isAddingChild && i < 2) return null
+            return (
+              <div key={i} className="flex items-center gap-2 flex-1">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+                    i < step
+                      ? 'bg-indigo-500 text-white'
+                      : i === step
+                        ? 'bg-indigo-500/30 border-2 border-indigo-400 text-indigo-300'
+                        : 'bg-white/10 text-white/40'
+                  }`}
+                >
+                  {i < step ? <Check className="w-4 h-4" /> : i + 1}
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div className={`flex-1 h-0.5 rounded ${i < step ? 'bg-indigo-500' : 'bg-white/10'}`} />
+                )}
               </div>
-              {i < STEPS.length - 1 && (
-                <div className={`flex-1 h-0.5 rounded ${i < step ? 'bg-indigo-500' : 'bg-white/10'}`} />
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Step content */}
@@ -242,6 +307,65 @@ export default function OnboardingPage() {
                       className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all"
                     />
                   </div>
+                </div>
+
+                {/* Promo Code */}
+                <div className="mt-4">
+                  {!showPromoInput ? (
+                    <button
+                      onClick={() => setShowPromoInput(true)}
+                      className="text-sm text-indigo-400 hover:text-indigo-300 underline transition-colors"
+                    >
+                      Have a promo code?
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-purple-200 mb-1.5 block">Promo Code</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={promoCode}
+                          onChange={(e) => {
+                            setPromoCode(e.target.value)
+                            setPromoCodeApplied(false)
+                            setPromoCodeError('')
+                          }}
+                          onKeyDown={(e) => e.key === 'Enter' && handlePromoCodeCheck()}
+                          placeholder="Enter code..."
+                          className={`flex-1 px-4 py-2.5 rounded-xl bg-white/5 border text-white placeholder-white/30 focus:outline-none focus:ring-1 transition-all text-sm ${
+                            promoCodeApplied
+                              ? 'border-green-500 focus:border-green-400 focus:ring-green-400'
+                              : 'border-white/10 focus:border-indigo-400 focus:ring-indigo-400'
+                          }`}
+                        />
+                        <button
+                          onClick={handlePromoCodeCheck}
+                          className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 transition-colors"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                      {promoCodeApplied && (
+                        <motion.div
+                          className="flex items-center gap-2 text-green-400 text-sm"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                        >
+                          <Check className="w-4 h-4" />
+                          Promo code applied! Free forever unlocked 🎉
+                        </motion.div>
+                      )}
+                      {promoCodeError && (
+                        <motion.p
+                          className="text-red-400 text-sm"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                        >
+                          {promoCodeError}
+                        </motion.p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -345,8 +469,14 @@ export default function OnboardingPage() {
             {step === 2 && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-white mb-2">Add your children</h2>
-                  <p className="text-purple-200/70">Create profiles for each child who will use InkWings</p>
+                  <h2 className="text-2xl font-bold text-white mb-2">
+                    {isAddingChild ? 'Add a new child' : 'Add your children'}
+                  </h2>
+                  <p className="text-purple-200/70">
+                    {isAddingChild
+                      ? 'Create a profile for the new child'
+                      : 'Create profiles for each child who will use InkWings'}
+                  </p>
                 </div>
 
                 <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">

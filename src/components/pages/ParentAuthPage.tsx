@@ -6,7 +6,7 @@ import { ChevronLeft, Lock } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 
 export default function ParentAuthPage() {
-  const { setPage, parentAccount, setAuthenticated, setMode } = useAppStore()
+  const { setPage, parentAccount, verifyPasscode, setAuthenticated, setMode } = useAppStore()
   const [passcode, setPasscode] = useState('')
   const [error, setError] = useState('')
   const [shakeKey, setShakeKey] = useState(0)
@@ -18,15 +18,12 @@ export default function ParentAuthPage() {
     setPasscode(newPasscode)
 
     if (newPasscode.length === 4) {
-      // Check passcode
-      if (!parentAccount?.passcode) {
-        // No passcode set, allow through
-        setTimeout(() => {
-          setAuthenticated(true)
-          setMode('parent')
-          setPage('parent-dashboard')
-        }, 300)
-      } else if (newPasscode === parentAccount.passcode) {
+      if (!parentAccount) {
+        // No parent account exists — do NOT allow bypass
+        setError('No parent account found. Please set up InkWings first.')
+        setShakeKey((k) => k + 1)
+        setTimeout(() => setPasscode(''), 600)
+      } else if (verifyPasscode(newPasscode)) {
         // Correct passcode
         setTimeout(() => {
           setAuthenticated(true)

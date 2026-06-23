@@ -2,38 +2,20 @@
 // Uses NVIDIA's LLM API (Nemotron) for creative story generation
 // Supports Nemotron-specific parameters like reasoning_effort and reasoning_budget
 
-// Images are placed every 2 pages: image i goes on page (i*2) (0-indexed)
-// If odd pages, the last image covers just 1 page
-function getImagePositions(pageCount: number, imageCount: number): Set<number> {
-  const positions = new Set<number>()
-  if (imageCount <= 0 || pageCount <= 0) return positions
-
-  for (let i = 0; i < imageCount; i++) {
-    const pos = i * 2
-    if (pos < pageCount) {
-      positions.add(pos)
-    } else {
-      // If more images than pairs, distribute remaining at the end
-      const remaining = imageCount - i
-      const startPos = pageCount - remaining
-      for (let j = i; j < imageCount; j++) {
-        positions.add(Math.max(startPos + (j - i), 0))
-      }
-      break
-    }
-  }
-  return positions
-}
+import { getImagePositions } from '@/lib/image-utils'
 
 export async function POST(request: Request) {
   try {
-    const { prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, childName, apiKey, model } = await request.json()
+    const { prompt, storyStyle, genre, ageRange, moral, pageCount, imageCount, childName } = await request.json()
+
+    // Backend-only API configuration (never exposed to frontend)
+    const apiKey = process.env.DEEPINFRA_API_KEY
+    const baseUrl = process.env.DEEPINFRA_BASE_URL || 'https://api.deepinfra.com/v1/openai'
+    const model = process.env.DEEPINFRA_STORY_MODEL || 'Qwen/Qwen2.5-72B-Instruct'
 
     if (!apiKey) {
-      return Response.json({ error: 'NVIDIA API key is required' }, { status: 400 })
+      return Response.json({ error: 'API key not configured on server' }, { status: 500 })
     }
-
-    const selectedModel = model || 'qwen/qwen3.5-122b-a10b'
 
     // Age-appropriate word count and vocabulary specifications
     // Based on industry standards for children's books:
@@ -105,7 +87,7 @@ CRITICAL RULES:
 
     // Build request body with model-appropriate parameters
     const requestBody: Record<string, unknown> = {
-      model: selectedModel,
+      model: model,
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -117,12 +99,12 @@ CRITICAL RULES:
     }
 
     // Model-specific parameters
-    if (selectedModel.includes('qwen')) {
+    if (model.includes('qwen')) {
       // Qwen 3.5 works best with lower temperature for structured output
       // NOTE: Qwen does NOT support the "stream" parameter — it causes a 500 error
       requestBody.temperature = 0.6
       requestBody.top_p = 0.95
-    } else if (selectedModel.includes('nemotron')) {
+    } else if (model.includes('nemotron')) {
       // Nemotron supports reasoning parameters and streaming config
       requestBody.temperature = 0.8
       requestBody.top_p = 0.95
@@ -136,7 +118,7 @@ CRITICAL RULES:
       requestBody.stream = false
     }
 
-    console.log(`[nvidia-story] Generating story with model: ${selectedModel}, age: ${ageRange}, pages: ${pageCount}`)
+    console.log(`[nvidia-story] Generating story with model: ${model}, age: ${ageRange}, pages: ${pageCount}`)
 
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
