@@ -404,7 +404,15 @@ export const useAppStore = create<AppState>()(
         isAuthenticated: state.isAuthenticated,
         currentChildId: state.currentChildId,
         mode: state.mode,
-        books: state.books,
+        // Don't persist base64 images — they exceed localStorage 5MB limit
+        books: state.books.map((book) => ({
+          ...book,
+          pages: book.pages.map((page) => ({
+            ...page,
+            imageUrl: undefined, // Strip base64 images from storage
+          })),
+        })),
+        currentBookId: state.currentBookId,
         currentPage: state.currentPage,
         imageStyle: state.imageStyle,
         adminCallLogs: state.adminCallLogs,
