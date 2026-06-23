@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/meta-llama/Meta-Llama-3-8B-Instruct';
+    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning';
 
     console.log(`[generate-story] API key loaded: ${apiKey ? apiKey.slice(0, 8) + '...' + apiKey.slice(-4) : 'MISSING'}`);
     console.log(`[generate-story] Inference URL: ${inferenceUrl}`);
