@@ -7,12 +7,10 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const baseUrl = process.env.DEEPINFRA_BASE_URL || 'https://api.deepinfra.com/v1/openai';
-    const model = process.env.DEEPINFRA_STORY_MODEL || 'google/gemma-4-26B-A4B-it';
+    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/meta-llama/Meta-Llama-3-8B-Instruct';
 
     console.log(`[generate-story] API key loaded: ${apiKey ? apiKey.slice(0, 8) + '...' + apiKey.slice(-4) : 'MISSING'}`);
-    console.log(`[generate-story] Base URL: ${baseUrl}`);
-    console.log(`[generate-story] Model: ${model}`);
+    console.log(`[generate-story] Inference URL: ${inferenceUrl}`);
 
     if (!apiKey) {
       return Response.json(
@@ -55,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     const specs = ageSpecs[ageRange || '6-8'] || ageSpecs['6-8'];
 
+    // Build the combined prompt for Llama 3
     const systemPrompt = `You are an expert children's book author. Write vivid, engaging stories.
 
 CRITICAL: Return ONLY valid JSON with exactly this format:
@@ -80,29 +79,33 @@ Requirements:
 - Each page has: text, imageDescription
 - Return ONLY the JSON object, no markdown, no explanation`;
 
-    console.log(`[generate-story] Calling DeepInfra OpenAI endpoint: ${baseUrl}/chat/completions`);
+    // Llama 3 chat format
+    const fullInput = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+${systemPrompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+${userPrompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+`;
+
+    console.log(`[generate-story] Calling DeepInfra native inference: ${inferenceUrl}`);
     console.log(`[generate-story] Age group: ${ageRange || '6-8'}`);
 
     const startTime = Date.now();
 
-    // Add timeout to prevent hanging forever (5 minutes for local testing with large models)
+    // Add timeout to prevent hanging forever (5 minutes for local testing)
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 300000); // 300 second timeout
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(inferenceUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 4096,
+        input: fullInput,
+        stop: [],
       }),
       signal: controller.signal,
     });
@@ -121,7 +124,7 @@ Requirements:
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.results?.[0]?.generated_text;
 
     if (!content) {
       console.error('[generate-story] No content in response:', data);
