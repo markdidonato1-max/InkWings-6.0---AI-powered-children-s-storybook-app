@@ -7,7 +7,8 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/google/gemma-4-26B-A4B-it';
+    const baseUrl = process.env.DEEPINFRA_BASE_URL || 'https://api.deepinfra.com/v1/openai';
+    const model = process.env.DEEPINFRA_STORY_MODEL || 'google/gemma-4-26B-A4B-it';
 
     if (!apiKey) {
       return Response.json(
@@ -50,7 +51,6 @@ export async function POST(request: NextRequest) {
 
     const specs = ageSpecs[ageRange || '6-8'] || ageSpecs['6-8'];
 
-    // Build the combined prompt for Gemma 4
     const systemPrompt = `You are an expert children's book author. Write vivid, engaging stories.
 
 CRITICAL: Return ONLY valid JSON with exactly this format:
@@ -76,16 +76,8 @@ Requirements:
 - Each page has: text, imageDescription
 - Return ONLY the JSON object, no markdown, no explanation`;
 
-    // Gemma-4 chat format (uses <start_of_turn> / <end_of_turn> tokens)
-    const fullInput = `<start_of_turn>user
-${systemPrompt}
-
-${userPrompt}<end_of_turn>
-<start_of_turn>model
-`;
-
-    console.log(`[generate-story] Calling DeepInfra inference: ${inferenceUrl}`);
-    console.log(`[generate-story] Age group: ${ageRange || '6-8'}`);
+    console.log(`[generate-story] Calling DeepInfra OpenAI endpoint: ${baseUrl}/chat/completions`);
+    console.log(`[generate-story] Model: ${model}, Age group: ${ageRange || '6-8'}`);
 
     const startTime = Date.now();
 
@@ -93,15 +85,21 @@ ${userPrompt}<end_of_turn>
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000); // 45 second timeout
 
-    const response = await fetch(inferenceUrl, {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        input: fullInput,
-        stream: false,
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' },
       }),
       signal: controller.signal,
     });
@@ -120,7 +118,7 @@ ${userPrompt}<end_of_turn>
     }
 
     const data = await response.json();
-    const content = data.results?.[0]?.generated_text;
+    const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
       console.error('[generate-story] No content in response:', data);
