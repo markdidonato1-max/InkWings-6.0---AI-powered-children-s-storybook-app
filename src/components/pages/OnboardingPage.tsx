@@ -522,7 +522,7 @@ export default function OnboardingPage() {
                                     : 'bg-white/5 border border-white/10 text-white/60'
                                 }`}
                               >
-                                Ages {range}
+                                {range === '9-12-advanced' ? 'Adv. 9-12' : `Ages ${range}`}
                               </button>
                             ))}
                           </div>

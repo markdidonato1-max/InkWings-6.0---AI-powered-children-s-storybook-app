@@ -25,7 +25,7 @@ export interface ParentAccount {
 export interface ChildProfile {
   id: string
   name: string
-  ageRange: '3-5' | '6-8' | '9-12'
+  ageRange: '3-5' | '6-8' | '9-12' | '9-12-advanced'
   avatar: string
   preferences: {
     favoriteGenres: string[]
@@ -121,7 +121,7 @@ interface AppState {
     prompt: string
     storyStyle: string
     genre: string
-    ageRange: '3-5' | '6-8' | '9-12'
+    ageRange: '3-5' | '6-8' | '9-12' | '9-12-advanced'
     moral: string
     pageCount: number
     imageCount: number
@@ -517,7 +517,7 @@ export const MORALS: { label: string; value: string }[] = [
   { label: 'Perseverance', value: 'perseverance' },
 ]
 
-export const AGE_RANGES: ('3-5' | '6-8' | '9-12')[] = ['3-5', '6-8', '9-12']
+export const AGE_RANGES: ('3-5' | '6-8' | '9-12' | '9-12-advanced')[] = ['3-5', '6-8', '9-12', '9-12-advanced']
 
 export const BOOK_COVER_GRADIENTS = [
   'from-pink-400 to-purple-500',

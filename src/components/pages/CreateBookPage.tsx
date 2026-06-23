@@ -634,12 +634,13 @@ export default function CreateBookPage() {
                         }`}
                       >
                         <p className={`text-xl font-bold ${ageRange === range ? 'text-white' : 'text-gray-800'}`}>
-                          Ages {range}
+                          {range === '9-12-advanced' ? 'Ages 9-12 (Advanced)' : `Ages ${range}`}
                         </p>
                         <p className={`text-sm mt-1 ${ageRange === range ? 'text-white/80' : 'text-gray-400'}`}>
                           {range === '3-5' && 'Simple words, short sentences, lots of repetition'}
                           {range === '6-8' && 'Growing vocabulary, medium-length sentences'}
                           {range === '9-12' && 'Rich vocabulary, complex narratives and themes'}
+                          {range === '9-12-advanced' && 'Advanced reading (Harry Potter level), rich world-building, complex prose'}
                         </p>
                       </button>
                     ))}
