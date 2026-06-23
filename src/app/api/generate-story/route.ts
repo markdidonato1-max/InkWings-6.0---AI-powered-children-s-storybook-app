@@ -7,10 +7,12 @@ export async function POST(request: NextRequest) {
 
     // Backend-only API configuration (never exposed to frontend)
     const apiKey = process.env.DEEPINFRA_API_KEY;
-    const inferenceUrl = process.env.DEEPINFRA_STORY_INFERENCE_URL || 'https://api.deepinfra.com/v1/inference/google/gemma-4-31B-it';
+    const baseUrl = process.env.DEEPINFRA_BASE_URL || 'https://api.deepinfra.com/v1/openai';
+    const model = process.env.DEEPINFRA_STORY_MODEL || 'google/gemma-4-26B-A4B-it';
 
     console.log(`[generate-story] API key loaded: ${apiKey ? apiKey.slice(0, 8) + '...' + apiKey.slice(-4) : 'MISSING'}`);
-    console.log(`[generate-story] Inference URL: ${inferenceUrl}`);
+    console.log(`[generate-story] Base URL: ${baseUrl}`);
+    console.log(`[generate-story] Model: ${model}`);
 
     if (!apiKey) {
       return Response.json(
@@ -78,10 +80,7 @@ Requirements:
 - Each page has: text, imageDescription
 - Return ONLY the JSON object, no markdown, no explanation`;
 
-    // Gemma-4 native inference format (from DeepInfra docs)
-    const fullInput = `<|begin_of_text|><start_of_turn>user\n\n${systemPrompt}\n\n${userPrompt}<end_of_turn>\n<start_of_turn>model\n\n`;
-
-    console.log(`[generate-story] Calling DeepInfra native inference: ${inferenceUrl}`);
+    console.log(`[generate-story] Calling DeepInfra OpenAI endpoint: ${baseUrl}/chat/completions`);
     console.log(`[generate-story] Age group: ${ageRange || '6-8'}`);
 
     const startTime = Date.now();
@@ -90,15 +89,20 @@ Requirements:
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 300000); // 300 second timeout
 
-    const response = await fetch(inferenceUrl, {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        input: fullInput,
-        stop: [],
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 4096,
       }),
       signal: controller.signal,
     });
@@ -117,7 +121,7 @@ Requirements:
     }
 
     const data = await response.json();
-    const content = data.results?.[0]?.generated_text;
+    const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
       console.error('[generate-story] No content in response:', data);
