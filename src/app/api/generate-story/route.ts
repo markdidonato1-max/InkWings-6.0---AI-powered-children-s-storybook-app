@@ -140,6 +140,14 @@ Requirements:
       }
     }
 
+    // Sanitize: models sometimes output literal newlines/tabs inside JSON strings
+    // which breaks JSON.parse. Replace them with escaped versions.
+    jsonContent = jsonContent
+      .replace(/\r\n/g, '\\n')
+      .replace(/\n/g, '\\n')
+      .replace(/\t/g, '\\t')
+      .replace(/\r/g, '\\n');
+
     let storyData;
     try {
       storyData = JSON.parse(jsonContent);
